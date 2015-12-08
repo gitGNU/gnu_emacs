@@ -228,7 +228,7 @@ Blank lines separate paragraphs.  Semicolons start comments.
 
 \\{emacs-lisp-mode-map}"
   :group 'lisp
-  (defvar project-library-roots-function)
+  (defvar project-vc-directories-function)
   (lisp-mode-variables nil nil 'elisp)
   (add-hook 'after-load-functions #'elisp--font-lock-flush-elisp-buffers)
   (setq-local electric-pair-text-pairs
@@ -238,7 +238,7 @@ Blank lines separate paragraphs.  Semicolons start comments.
   (add-function :before-until (local 'eldoc-documentation-function)
                 #'elisp-eldoc-documentation-function)
   (add-hook 'xref-backend-functions #'elisp--xref-backend nil t)
-  (setq-local project-library-roots-function #'elisp-library-roots)
+  (setq-local project-vc-directories-function #'elisp-library-roots)
   (add-hook 'completion-at-point-functions
             #'elisp-completion-at-point nil 'local))
 
@@ -794,8 +794,6 @@ non-nil result supercedes the xrefs produced by
       );; 'unless xrefs'
 
     xrefs))
-
-(declare-function project-library-roots "project")
 
 (cl-defmethod xref-backend-apropos ((_backend (eql elisp)) regexp)
   (apply #'nconc

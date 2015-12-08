@@ -1520,8 +1520,11 @@ It does not apply the value to buffers."
     (when project-dir
       (ede-directory-get-open-project project-dir 'ROOT))))
 
-(cl-defmethod project-roots ((project ede-project))
+(cl-defmethod project-directories ((project ede-project))
   (list (ede-project-root-directory project)))
+
+(cl-defmethod project-directory-categories ((_project ede-project) _dir)
+  '(primary))
 
 (add-hook 'project-find-functions #'project-try-ede)
 
