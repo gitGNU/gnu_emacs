@@ -240,10 +240,12 @@ be found, return nil.
 The default implementation uses `semantic-symref-tool-alist' to
 find a search tool; by default, this uses \"find | grep\" in the
 `project-current' roots."
-  (cl-mapcan
-   (lambda (dir)
-     (xref-collect-references identifier dir))
-   (project-directories-in-categories (project-current t))))
+  (let ((project (project-current t)))
+    (cl-mapcan
+     (lambda (dir)
+       (xref-collect-references identifier dir
+                                (project-directory-shallow-p project dir)))
+     (project-directories-in-categories project))))
 
 (cl-defgeneric xref-backend-apropos (backend pattern)
   "Find all symbols that match PATTERN.
@@ -833,11 +835,13 @@ and just use etags."
 (declare-function semantic-find-file-noselect "semantic/fw")
 (declare-function grep-expand-template "grep")
 
-(defun xref-collect-references (symbol dir)
+(defun xref-collect-references (symbol dir &optional shallow)
   "Collect references to SYMBOL inside DIR.
 This function uses the Semantic Symbol Reference API, see
 `semantic-symref-find-references-by-name' for details on which
 tools are used, and when."
+  ;; FIXME: Apparently we'll have to support SHALLOW inside
+  ;; semantic-symref tools now.
   (cl-assert (directory-name-p dir))
   (require 'semantic/symref)
   (defvar semantic-symref-tool)
@@ -855,7 +859,7 @@ tools are used, and when."
       (mapc #'kill-buffer
             (cl-set-difference (buffer-list) orig-buffers)))))
 
-(defun xref-collect-matches (regexp files dir ignores)
+(defun xref-collect-matches (regexp files dir ignores &optional shallow)
   "Collect matches for REGEXP inside FILES in DIR.
 FILES is a string with glob patterns separated by spaces.
 IGNORES is a list of glob patterns."
@@ -868,7 +872,7 @@ IGNORES is a list of glob patterns."
                                                        grep-find-template t t))
          (grep-highlight-matches nil)
          (command (xref--rgrep-command (xref--regexp-to-extended regexp)
-                                       files dir ignores))
+                                       files dir ignores shallow))
          (orig-buffers (buffer-list))
          (buf (get-buffer-create " *xref-grep*"))
          (grep-re (caar grep-regexp-alist))
@@ -888,7 +892,7 @@ IGNORES is a list of glob patterns."
       (mapc #'kill-buffer
             (cl-set-difference (buffer-list) orig-buffers)))))
 
-(defun xref--rgrep-command (regexp files dir ignores)
+(defun xref--rgrep-command (regexp files dir ignores shallow)
   (require 'find-dired)      ; for `find-name-arg'
   (defvar grep-find-template)
   (defvar find-name-arg)
@@ -905,6 +909,8 @@ IGNORES is a list of glob patterns."
            (shell-quote-argument ")"))
    dir
    (concat
+    (when shallow
+      " -maxdepth 1 ")
     (shell-quote-argument "(")
     " -path "
     (mapconcat

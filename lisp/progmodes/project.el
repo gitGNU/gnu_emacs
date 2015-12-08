@@ -100,6 +100,13 @@ end it with `/'.  DIR must be one of `project-directories' or
     vc-directory-exclusion-list)
    grep-find-ignored-files))
 
+(cl-defgeneric project-directory-shallow-p (_project _dir)
+  "Return non-nil if DIR's subdirectories should be skipped.
+
+If this method returns nil, a consumer should traverse DIR's
+contents recursively when listing or searching through files."
+  nil)
+
 (defgroup project-vc nil
   "Project implementation using the VC package."
   :group 'tools)
@@ -174,16 +181,22 @@ implementation of `project-library-roots'.")
 
 (defun project-directories-in-categories (project &rest categories)
   (project-combine-directories
+   project
    (cl-delete-if
     (lambda (dir)
       (cl-set-difference categories (project-directory-categories project dir)))
     (project-directories project))))
 
-(defun project-combine-directories (dirs)
+(defun project-combine-directories (project dirs)
   "Return a sorted and culled list of directory names in PROJECT.
 It takes DIRS, removes non-existing directories, as well as
-directories a parent of whose is already in the list."
-  (let* ((dirs (sort
+directories a parent of whose is already in the list (if the
+parent is not shallow)."
+  (let* ((deep-dirs (cl-delete-if
+                     (lambda (dir)
+                       (project-directory-shallow-p project dir))
+                     dirs))
+         (dirs (sort
                 (mapcar
                  (lambda (dir)
                    (file-name-as-directory (expand-file-name dir)))
@@ -192,16 +205,21 @@ directories a parent of whose is already in the list."
          (ref dirs))
     ;; Delete subdirectories from the list.
     (while (cdr ref)
-      (if (string-prefix-p (car ref) (cadr ref))
+      (if (and (string-prefix-p (car ref) (cadr ref))
+               (member (car ref) deep-dirs))
           (setcdr ref (cddr ref))
         (setq ref (cdr ref))))
     (cl-delete-if-not #'file-exists-p dirs)))
 
-(defun project-subtract-directories (files dirs)
+(defun project-subtract-directories (project files dirs)
   "Return a list of elements from FILES that are outside of DIRS.
 DIRS must contain directory names."
   ;; Sidestep the issue of expanded/abbreviated file names here.
-  (cl-set-difference files dirs :test #'file-in-directory-p))
+  (cl-set-difference files dirs
+                     :test
+                     (lambda (file dir)
+                       (and (file-in-directory-p file dir)
+                            (not (project-directory-shallow-p project dir))))))
 
 (defun project--value-in-dir (var dir)
   (with-temp-buffer
@@ -249,7 +267,8 @@ pattern to search for."
          (xrefs (cl-mapcan
                  (lambda (dir)
                    (xref-collect-matches regexp files dir
-                                         (project-ignores project dir)))
+                                         (project-ignores project dir)
+                                         (project-directory-shallow-p project dir)))
                  dirs)))
     (unless xrefs
       (user-error "No matches for: %s" regexp))
