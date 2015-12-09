@@ -57,19 +57,20 @@ the user for a different directory to look in."
 (defun project--find-in-directory (dir)
   (run-hook-with-args-until-success 'project-find-functions dir))
 
-(cl-defgeneric project-directories (project)
-  "Return the list of directories related to the current project.
+(define-error 'project-unknown-category "Category not supported")
+
+(cl-defgeneric project-directories (project &rest categories)
+  "Return the list of project-related directories, belonging to CATEGORIES.
 
 In the simplest case, it's just one directory, which contains the
 project file and everything else in the project.  In more
 advanced configurations, this list can include multiple project
-roots, as well as directories in specialized categories, such as
-`source-roots' and `test-roots', and .
+roots, as well as directories inside them that belong to
+specialized categories.  If CATEGORIES includes a category not
+supported by this project backend, this method must signal a
+`project-unknown-category' error.
 
-The directory names should be absolute.")
-
-(cl-defgeneric project-directory-categories (project dir)
-  "Return the list of categories which DIR belongs to.
+The directory names should be absolute.
 
 The standard categories are:
 
@@ -144,18 +145,19 @@ implementation of `project-library-roots'.")
                               (vc-call-backend backend 'root dir)))))
     (and root (cons 'vc root))))
 
-(cl-defmethod project-directories ((project (head vc)))
+(cl-defmethod project-directories ((project (head vc)) &rest categories)
   (let ((root (cdr project)))
-    (cons
-     (cdr project)
-     (funcall
-      (project--value-in-dir 'project-vc-directories-function root)))))
-
-(cl-defmethod project-directory-categories ((project (head vc)) dir)
-  (let ((root (cdr project)))
-    (if (file-in-directory-p dir root)
-        '(primary)
-      '())))
+    (cond
+     ((equal categories '(primary))
+      (list root))
+     ((null categories)
+      (project-combine-directories
+       (cons
+        (cdr project)
+        (funcall project-vc-directories-function))))
+     (t
+      (signal 'project-unknown-category
+              (delq 'primary categories))))))
 
 (cl-defmethod project-ignores ((project (head vc)) dir)
   (let* ((root (cdr project))
@@ -171,13 +173,6 @@ implementation of `project-library-roots'.")
         (vc-call-backend backend 'ignore-completion-table root)))
      (project--value-in-dir 'project-vc-ignores root)
      (cl-call-next-method))))
-
-(defun project-directories-in-categories (project &rest categories)
-  (project-combine-directories
-   (cl-delete-if
-    (lambda (dir)
-      (cl-set-difference categories (project-directory-categories project dir)))
-    (project-directories project))))
 
 (defun project-combine-directories (dirs)
   "Return a sorted and culled list of directory names in PROJECT.
@@ -224,7 +219,7 @@ to search in, and the file name pattern to search for."
          (dirs (if current-prefix-arg
                    (list (read-directory-name "Base directory: "
                                               nil default-directory t))
-                 (project-directories-in-categories pr 'primary))))
+                 (project-directories pr 'primary))))
     (project--find-regexp-in dirs regexp pr)))
 
 ;;;###autoload
@@ -234,7 +229,7 @@ With \\[universal-argument] prefix, you can specify the file name
 pattern to search for."
   (interactive (list (project--read-regexp)))
   (let* ((pr (project-current t))
-         (dirs (project-directories-in-categories pr)))
+         (dirs (project-directories pr)))
     (project--find-regexp-in dirs regexp pr)))
 
 (defun project--read-regexp ()

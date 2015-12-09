@@ -243,7 +243,7 @@ find a search tool; by default, this uses \"find | grep\" in the
   (cl-mapcan
    (lambda (dir)
      (xref-collect-references identifier dir))
-   (project-directories-in-categories (project-current t))))
+   (project-directories (project-current t))))
 
 (cl-defgeneric xref-backend-apropos (backend pattern)
   "Find all symbols that match PATTERN.
