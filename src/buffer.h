@@ -59,6 +59,10 @@ INLINE_HEADER_BEGIN
 #define Z (current_buffer->text->z)
 #define Z_BYTE (current_buffer->text->z_byte)
 
+/* Positions that take into account widen limits.  */
+#define BEGWL (BUF_BEGWL (current_buffer))
+#define ZWL (BUF_ZWL(current_buffer))
+
 /* Macros for the addresses of places in the buffer.  */
 
 /* Address of beginning of buffer.  */
@@ -128,6 +132,15 @@ INLINE_HEADER_BEGIN
     : NILP (BVAR (buf, begv_marker)) ? buf->begv_byte	\
     : marker_byte_position (BVAR (buf, begv_marker)))
 
+/* Hard positions in buffer. */
+#define BUF_BEGWL(buf)  	                                \
+  ((NILP (BVAR (buf, widen_limits))) ?  BUF_BEG (buf)    \
+   : XINT( XCAR (BVAR (buf, widen_limits))))
+
+#define BUF_ZWL(buf)  	                                \
+  ((NILP (BVAR (buf, widen_limits))) ?  BUF_Z (buf)      \
+   : XINT( XCDR (BVAR (buf, widen_limits))))
+
 /* Position of point in buffer.  */
 #define BUF_PT(buf)					\
    (buf == current_buffer ? PT				\
@@ -149,6 +162,7 @@ INLINE_HEADER_BEGIN
    (buf == current_buffer ? ZV_BYTE			\
     : NILP (BVAR (buf, zv_marker)) ? buf->zv_byte	\
     : marker_byte_position (BVAR (buf, zv_marker)))
+
 
 /* Position of gap in buffer.  */
 #define BUF_GPT(buf) ((buf)->text->gpt)
@@ -747,6 +761,9 @@ struct buffer
      t means to use hollow box cursor.
      See `cursor-type' for other values.  */
   Lisp_Object cursor_in_non_selected_windows_;
+
+  /* Cons of hard widen limits */
+  Lisp_Object widen_limits_;
 
   /* No more Lisp_Object beyond this point.  Except undo_list,
      which is handled specially in Fgarbage_collect.  */

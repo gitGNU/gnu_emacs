@@ -329,6 +329,11 @@ bset_scroll_up_aggressively (struct buffer *b, Lisp_Object val)
   b->scroll_up_aggressively_ = val;
 }
 static void
+bset_widen_limits (struct buffer *b, Lisp_Object val)
+{
+  b->widen_limits_ = val;
+}
+static void
 bset_selective_display (struct buffer *b, Lisp_Object val)
 {
   b->selective_display_ = val;
@@ -847,6 +852,7 @@ CLONE nil means the indirect buffer's state is reset to default values.  */)
       bset_display_count (b, make_number (0));
       bset_backed_up (b, Qnil);
       bset_auto_save_file_name (b, Qnil);
+      bset_widen_limits (b, b->base_buffer->widen_limits_);
       set_buffer_internal_1 (b);
       Fset (intern ("buffer-save-without-query"), Qnil);
       Fset (intern ("buffer-file-number"), Qnil);
@@ -961,6 +967,7 @@ reset_buffer_local_variables (struct buffer *b, bool permanent_too)
      things that depend on the major mode.
      default-major-mode is handled at a higher level.
      We ignore it here.  */
+  bset_widen_limits(b, Qnil);
   bset_major_mode (b, Qfundamental_mode);
   bset_keymap (b, Qnil);
   bset_mode_name (b, QSFundamental);
@@ -2167,7 +2174,7 @@ so the buffer is truly empty after this.  */)
 {
   Fwiden ();
 
-  del_range (BEG, Z);
+  del_range (BEGWL, ZWL);
 
   current_buffer->last_window_start = 1;
   /* Prevent warnings, or suspension of auto saving, that would happen
@@ -5037,6 +5044,7 @@ init_buffer_once (void)
   bset_display_count (&buffer_local_flags, make_number (-1));
   bset_display_time (&buffer_local_flags, make_number (-1));
   bset_enable_multibyte_characters (&buffer_local_flags, make_number (-1));
+  bset_widen_limits (&buffer_local_flags, make_number (-1));
 
   /* These used to be stuck at 0 by default, but now that the all-zero value
      means Qnil, we have to initialize them explicitly.  */
@@ -5160,6 +5168,7 @@ init_buffer_once (void)
   bset_cursor_type (&buffer_defaults, Qt);
   bset_extra_line_spacing (&buffer_defaults, Qnil);
   bset_cursor_in_non_selected_windows (&buffer_defaults, Qt);
+  bset_widen_limits (&buffer_defaults, Qnil);
 
   bset_enable_multibyte_characters (&buffer_defaults, Qt);
   bset_buffer_file_coding_system (&buffer_defaults, Qnil);
@@ -5366,7 +5375,6 @@ defvar_per_buffer (struct Lisp_Buffer_Objfwd *bo_fwd, const char *namestring,
        slot of buffer_local_flags.  */
     emacs_abort ();
 }
-
 
 /* Initialize the buffer routines.  */
 void
@@ -5795,6 +5803,13 @@ Backing up is done before the first time the file is saved.  */);
 If you set this to -2, that means don't turn off auto-saving in this buffer
 if its text size shrinks.   If you use `buffer-swap-text' on a buffer,
 you probably should set this to -2 in that buffer.  */);
+
+  DEFVAR_PER_BUFFER ("buffer-widen-limits", &BVAR (current_buffer, widen_limits),
+                     Qnil,
+                     doc: /* When non-nil `widen` will widen to these limits.
+Must be a cons of the form (MIN . MAX) where MIN and MAX are integers
+of hard widen limits in this buffer. This is an experimental variable
+intended primarily for multi-mode engines.  */);
 
   DEFVAR_PER_BUFFER ("selective-display", &BVAR (current_buffer, selective_display),
 		     Qnil,

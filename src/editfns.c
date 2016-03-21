@@ -3480,12 +3480,25 @@ DEFUN ("delete-and-extract-region", Fdelete_and_extract_region,
     return empty_unibyte_string;
   return del_range_1 (XINT (start), XINT (end), 1, 1);
 }
+
 
 DEFUN ("widen", Fwiden, Swiden, 0, 0, "",
        doc: /* Remove restrictions (narrowing) from current buffer.
-This allows the buffer's full text to be seen and edited.  */)
+This allows the buffer's full text to be seen and edited.
+If `buffer-widen-limits` is non-nil, widen only to those limits.  */)
   (void)
 {
+
+  if (!NILP (BVAR(current_buffer, widen_limits)))
+    {
+      Lisp_Object hl = BVAR(current_buffer,  widen_limits);
+      CHECK_CONS(hl);
+      CHECK_NUMBER(XCAR(hl));
+      CHECK_NUMBER(XCDR(hl));
+      Fnarrow_to_region(XCAR(hl), XCDR(hl));
+      return Qnil;
+    }
+
   if (BEG != BEGV || Z != ZV)
     current_buffer->clip_changed = 1;
   BEGV = BEG;
