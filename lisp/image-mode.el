@@ -371,7 +371,7 @@ call."
   "Internal variable to keep the previous non-image major mode.")
 
 (defvar image-mode-map
-  (let ((map (make-sparse-keymap)))
+  (let ((map (copy-keymap image-map)))
     (set-keymap-parent map special-mode-map)
     (define-key map "\C-c\C-c" 'image-toggle-display)
     (define-key map (kbd "SPC")       'image-scroll-up)
