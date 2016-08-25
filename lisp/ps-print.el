@@ -5826,7 +5826,7 @@ XSTART YSTART are the relative position for the first page in a sheet.")
 	ps-default-background (ps-rgb-color
 			       (cond
 				((or (member ps-print-color-p
-					     '(nil back-white))
+					     '(nil black-white))
 				     (eq genfunc 'ps-generate-postscript))
 				 nil)
 				((eq ps-default-bg 'frame-parameter)
@@ -5840,7 +5840,7 @@ XSTART YSTART are the relative position for the first page in a sheet.")
 	ps-default-foreground (ps-rgb-color
 			       (cond
 				((or (member ps-print-color-p
-					     '(nil back-white))
+					     '(nil black-white))
 				     (eq genfunc 'ps-generate-postscript))
 				 nil)
 				((eq ps-default-fg 'frame-parameter)
@@ -5855,12 +5855,12 @@ XSTART YSTART are the relative position for the first page in a sheet.")
 			       #'(lambda (arg)
 				   (ps-rgb-color arg "unspecified-fg" 0.0))
 			       (append (and (not (member ps-print-color-p
-							 '(nil back-white)))
+							 '(nil black-white)))
 					    ps-fg-list)
 				       (list ps-default-foreground
 					     "black")))
 	ps-default-color      (and (not (member ps-print-color-p
-						'(nil back-white)))
+						'(nil black-white)))
 				   ps-default-foreground)
 	ps-current-color      ps-default-color
 	;; Set up default functions.
