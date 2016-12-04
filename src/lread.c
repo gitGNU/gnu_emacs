@@ -84,8 +84,10 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
    for keys, it's effectively little more than a vector, but it'll
    manage any needed resizing for us.
 
-   The hash must be recreated and empty before all top-level calls to
-   read0.  */
+   The variable must be reset to an empty hash table before all
+   top-level calls to read0.  In between calls, it may be an empty
+   hash table left unused from the previous call (to reduce
+   allocations), or nil.  */
 static Lisp_Object read_objects_map;
 
 /* The recursive objects read with the #n=object form.
@@ -99,8 +101,10 @@ static Lisp_Object read_objects_map;
    placeholders for other objects still being read), are stored.
 
    A hash table is used for efficient lookups of keys.  We don't care
-   what the value slots hold.  The hash must be recreated and empty
-   before all top-level calls to read0.  */
+   what the value slots hold.  The variable must be set to an empty
+   hash table before all top-level calls to read0.  In between calls,
+   it may be an empty hash table left unused from the previous call
+   (to reduce allocations), or nil.  */
 static Lisp_Object read_objects_completed;
 
 /* File for get_file_char to read from.  Use by load.  */
@@ -1913,14 +1917,18 @@ readevalloop (Lisp_Object readcharfun,
 	  || c == NO_BREAK_SPACE)
 	goto read_next;
 
-      read_objects_map
-	= make_hash_table (hashtest_eq, make_number (DEFAULT_HASH_SIZE),
-			   make_float (DEFAULT_REHASH_SIZE),
-			   make_float (DEFAULT_REHASH_THRESHOLD), Qnil);
-      read_objects_completed
-	= make_hash_table (hashtest_eq, make_number (DEFAULT_HASH_SIZE),
-			   make_float (DEFAULT_REHASH_SIZE),
-			   make_float (DEFAULT_REHASH_THRESHOLD), Qnil);
+      if (! HASH_TABLE_P (read_objects_map)
+	  || XHASH_TABLE (read_objects_map)->count)
+	read_objects_map
+	  = make_hash_table (hashtest_eq, make_number (DEFAULT_HASH_SIZE),
+			     make_float (DEFAULT_REHASH_SIZE),
+			     make_float (DEFAULT_REHASH_THRESHOLD), Qnil);
+      if (! HASH_TABLE_P (read_objects_completed)
+	  || XHASH_TABLE (read_objects_completed)->count)
+	read_objects_completed
+	  = make_hash_table (hashtest_eq, make_number (DEFAULT_HASH_SIZE),
+			     make_float (DEFAULT_REHASH_SIZE),
+			     make_float (DEFAULT_REHASH_THRESHOLD), Qnil);
       if (!NILP (Vpurify_flag) && c == '(')
 	{
 	  val = read_list (0, readcharfun);
@@ -1947,7 +1955,13 @@ readevalloop (Lisp_Object readcharfun,
 	  else
 	    val = read_internal_start (readcharfun, Qnil, Qnil);
 	}
-      read_objects_map = read_objects_completed = Qnil;
+      /* Empty hashes can be reused; otherwise, reset on next call.  */
+      if (HASH_TABLE_P (read_objects_map)
+	  && XHASH_TABLE (read_objects_map)->count > 0)
+	read_objects_map = Qnil;
+      if (HASH_TABLE_P (read_objects_completed)
+	  && XHASH_TABLE (read_objects_completed)->count > 0)
+	read_objects_completed = Qnil;
 
       if (!NILP (start) && continue_reading_p)
 	start = Fpoint_marker ();
@@ -2159,7 +2173,13 @@ read_internal_start (Lisp_Object stream, Lisp_Object start, Lisp_Object end)
   if (EQ (Vread_with_symbol_positions, Qt)
       || EQ (Vread_with_symbol_positions, stream))
     Vread_symbol_positions_list = Fnreverse (Vread_symbol_positions_list);
-  read_objects_map = read_objects_completed = Qnil;
+  /* Empty hashes can be reused; otherwise, reset on next call.  */
+  if (HASH_TABLE_P (read_objects_map)
+      && XHASH_TABLE (read_objects_map)->count > 0)
+    read_objects_map = Qnil;
+  if (HASH_TABLE_P (read_objects_completed)
+      && XHASH_TABLE (read_objects_completed)->count > 0)
+    read_objects_completed = Qnil;
   return retval;
 }
 
