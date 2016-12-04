@@ -3497,10 +3497,33 @@ substitute_object_recurse (Lisp_Object object, Lisp_Object placeholder, Lisp_Obj
 
     case Lisp_Cons:
       {
-	SUBSTITUTE (XCAR (subtree),
-		    XSETCAR (subtree, true_value));
-	SUBSTITUTE (XCDR (subtree),
-		    XSETCDR (subtree, true_value));
+	/* It'd be easy enough to just process the car and cdr slots
+	   recursively, but since we can't do tail recursion, a
+	   1000-element list produces 1000 recursive calls.  Instead,
+	   process the car slot recursively, but iterate over cdr
+	   slots as long as it looks like a proper list.  */
+	Lisp_Object pair = subtree;
+	while (XTYPE (pair) == Lisp_Cons)
+	  {
+	    Lisp_Object cdr;
+	    SUBSTITUTE (XCAR (pair),
+			XSETCAR (pair, true_value));
+	    cdr = XCDR (pair);
+	    if (XTYPE (cdr) != Lisp_Cons)
+	      break;
+	    /* Duplicate the top-of-function processing specific to a
+	       cons cell.  */
+	    if (EQ (placeholder, cdr))
+	      break;
+	    if (!EQ (Qnil, Fmemq (cdr, seen_list)))
+	      break;
+	    if (hash_lookup (XHASH_TABLE (read_objects_completed), cdr, NULL)
+		>= 0)
+	      seen_list = Fcons (cdr, seen_list);
+	    pair = cdr;
+	  }
+	SUBSTITUTE (XCDR (pair),
+		    XSETCDR (pair, true_value));
 	return subtree;
       }
 
