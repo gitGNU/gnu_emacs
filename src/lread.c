@@ -3403,7 +3403,7 @@ read1 (Lisp_Object readcharfun, int *pch, bool first_in_list)
 }
 
 
-/* List of nodes we've seen during substitute_object_in_subtree.  */
+/* Hash table of nodes we've seen during substitute_object_in_subtree.  */
 static Lisp_Object seen_list;
 
 static void
@@ -3411,15 +3411,23 @@ substitute_object_in_subtree (Lisp_Object object, Lisp_Object placeholder)
 {
   Lisp_Object check_object;
 
-  /* We haven't seen any objects when we start.  */
-  seen_list = Qnil;
+  /* We haven't seen any objects when we start; start with an empty
+     hash.  */
+  if (! HASH_TABLE_P (seen_list)
+      || XHASH_TABLE (seen_list)->count)
+    seen_list
+      = make_hash_table (hashtest_eq, make_number (DEFAULT_HASH_SIZE),
+			 make_float (DEFAULT_REHASH_SIZE),
+			 make_float (DEFAULT_REHASH_THRESHOLD), Qnil);
 
   /* Make all the substitutions.  */
   check_object
     = substitute_object_recurse (object, placeholder, object);
 
   /* Clear seen_list because we're done with it.  */
-  seen_list = Qnil;
+  if (HASH_TABLE_P (seen_list)
+      && XHASH_TABLE (seen_list)->count > 0)
+    seen_list = Qnil;
 
   /* The returned object here is expected to always eq the
      original.  */
@@ -3456,7 +3464,9 @@ substitute_object_recurse (Lisp_Object object, Lisp_Object placeholder, Lisp_Obj
     return subtree;
 
   /* If we've been to this node before, don't explore it again.  */
-  if (!EQ (Qnil, Fmemq (subtree, seen_list)))
+  struct Lisp_Hash_Table *seen_list_htable = XHASH_TABLE (seen_list);
+  EMACS_UINT hash;
+  if (hash_lookup (seen_list_htable, subtree, &hash) >= 0)
     return subtree;
 
   /* If this node can be the entry point to a cycle, remember that
@@ -3464,7 +3474,7 @@ substitute_object_recurse (Lisp_Object object, Lisp_Object placeholder, Lisp_Obj
      by #n=, which means that we can find it as a value in
      read_objects_completed.  */
   if (hash_lookup (XHASH_TABLE (read_objects_completed), subtree, NULL) >= 0)
-    seen_list = Fcons (subtree, seen_list);
+    hash_put (seen_list_htable, subtree, Qnil, hash);
 
   /* Recurse according to subtree's type.
      Every branch must return a Lisp_Object.  */
@@ -3515,11 +3525,11 @@ substitute_object_recurse (Lisp_Object object, Lisp_Object placeholder, Lisp_Obj
 	       cons cell.  */
 	    if (EQ (placeholder, cdr))
 	      break;
-	    if (!EQ (Qnil, Fmemq (cdr, seen_list)))
+	    if (hash_lookup (seen_list_htable, subtree, &hash) >= 0)
 	      break;
 	    if (hash_lookup (XHASH_TABLE (read_objects_completed), cdr, NULL)
 		>= 0)
-	      seen_list = Fcons (cdr, seen_list);
+	      hash_put (seen_list_htable, subtree, Qnil, hash);
 	    pair = cdr;
 	  }
 	SUBSTITUTE (XCDR (pair),
