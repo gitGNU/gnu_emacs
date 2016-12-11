@@ -185,6 +185,8 @@ static int readbyte_from_string (int, Lisp_Object);
    means that there's no unread character.  */
 static int unread_char;
 
+/* Note that this is expanded inline by hand in a branch of read1 for
+   performance reasons.  */
 static int
 readchar (Lisp_Object readcharfun, bool *multibyte)
 {
@@ -462,6 +464,8 @@ readbyte_for_lambda (int c, Lisp_Object readcharfun)
 }
 
 
+/* Note that this is expanded inline by hand in a branch of read1 for
+   performance reasons.  */
 static int
 readbyte_from_file (int c, Lisp_Object readcharfun)
 {
@@ -3330,34 +3334,148 @@ read1 (Lisp_Object readcharfun, int *pch, bool first_in_list)
 	{
 	  char *end = read_buffer + read_buffer_size;
 
-	  do
+	  if (EQ (readcharfun, Qget_file_char))
 	    {
-	      if (end - p < MAX_MULTIBYTE_LENGTH)
-		{
-		  ptrdiff_t offset = p - read_buffer;
-		  grow_read_buffer ();
-		  p = read_buffer + offset;
-		  end = read_buffer + read_buffer_size;
-		}
+	      /* This is the below "do" loop with changes:
 
-	      if (c == '\\')
-		{
-		  c = READCHAR;
-		  if (c == -1)
-		    end_of_file_error ();
-		  quoted = 1;
-		}
+		 Some calls to READCHAR and readbyte_from_file are
+		 expanded inline with irrelevant branches including
+		 MULE support pruned.
 
-	      if (multibyte)
-		p += CHAR_STRING (c, (unsigned char *) p);
-	      else
-		*p++ = c;
-	      c = READCHAR;
+		 Instead of blocking and unblocking input around each
+		 getc call, we block input at the start and unblock at
+		 the end, and make the "normal" state in this loop to
+		 have input being blocked.  Calls to functions that
+		 may signal errors are wrapped in unblock/block calls.
+
+		 This keeps us from constantly fiddling with input
+		 blocking in the common case of scanning additional
+		 ASCII symbol name characters (other than backslash)
+		 without interrupted reads.
+
+		 This is done for performance reasons.  */
+	      block_input ();
+	      do
+		{
+		  if (end - p < MAX_MULTIBYTE_LENGTH)
+		    {
+		      ptrdiff_t offset = p - read_buffer;
+		      unblock_input ();
+		      grow_read_buffer ();
+		      block_input ();
+		      p = read_buffer + offset;
+		      end = read_buffer + read_buffer_size;
+		    }
+
+		  if (c == '\\')
+		    {
+		      unblock_input ();
+		      c = READCHAR;
+		      if (c == -1)
+			end_of_file_error ();
+		      quoted = 1;
+		      block_input ();
+		    }
+
+		  if (multibyte)
+		    p += CHAR_STRING (c, (unsigned char *) p);
+		  else
+		    *p++ = c;
+		  /* c = READCHAR; expanded below:  */
+		  readchar_count++;
+		  if (unread_char >= 0)
+		    {
+		      c = unread_char;
+		      unread_char = -1;
+		    }
+		  else
+		    {
+		      unsigned char buf[MAX_MULTIBYTE_LENGTH];
+		      int i, len;
+
+		      /* c = readbyte_from_file (-1, readcharfun);  */
+		      /* expands into:  */
+		      c = getc_unlocked (instream);
+
+		      /* Interrupted reads have been observed while
+			 reading over the network.  */
+		      while (c == EOF && ferror (instream) && errno == EINTR)
+			{
+			  unblock_input ();
+			  QUIT;
+			  block_input ();
+			  clearerr (instream);
+			  c = getc_unlocked (instream);
+			}
+
+		      if (c == EOF)
+			c = -1;
+
+		      if (c < 0)
+			goto have_char_from_file;
+		      if (ASCII_CHAR_P (c))
+			goto have_char_from_file;
+		      i = 0;
+		      buf[i++] = c;
+		      len = BYTES_BY_CHAR_HEAD (c);
+		      while (i < len)
+			{
+			  unblock_input ();
+			  c = readbyte_from_file (-1, readcharfun);
+			  if (c < 0 || ! TRAILING_CODE_P (c))
+			    {
+			      while (--i > 1)
+				readbyte_from_file (buf[i], readcharfun);
+			      c = BYTE8_TO_CHAR (buf[0]);
+			      block_input ();
+			      goto have_char_from_file;
+			    }
+			  buf[i++] = c;
+			}
+		      c = STRING_CHAR (buf);
+		      /* fall through */
+		    have_char_from_file:
+		      /* Input should be blocked at this point.  */
+		      ;
+		    }
+		}
+	      while (c > 040
+		     && c != NO_BREAK_SPACE
+		     && (c >= 0200
+			 || strchr ("\"';()[]#`,", c) == NULL));
+	      unblock_input ();
 	    }
-	  while (c > 040
-		 && c != NO_BREAK_SPACE
-		 && (c >= 0200
-		     || strchr ("\"';()[]#`,", c) == NULL));
+	  else
+	    {
+	      do
+		{
+		  if (end - p < MAX_MULTIBYTE_LENGTH)
+		    {
+		      ptrdiff_t offset = p - read_buffer;
+		      grow_read_buffer ();
+		      p = read_buffer + offset;
+		      end = read_buffer + read_buffer_size;
+		    }
+
+		  if (c == '\\')
+		    {
+		      c = READCHAR;
+		      if (c == -1)
+			end_of_file_error ();
+		      quoted = 1;
+		    }
+
+		  if (multibyte)
+		    p += CHAR_STRING (c, (unsigned char *) p);
+		  else
+		    *p++ = c;
+		  c = READCHAR;
+		}
+	      while (c > 040
+		     && c != NO_BREAK_SPACE
+		     && (c >= 0200
+			 || strchr ("\"';()[]#`,", c) == NULL));
+	    }
 
 	  if (p == end)
 	    {
