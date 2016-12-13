@@ -500,7 +500,6 @@ load_charset_map_from_file (struct charset *charset, Lisp_Object mapfile,
      large (larger than MAX_ALLOCA).  */
   head = record_xmalloc (sizeof *head);
   entries = head;
-  memset (entries, 0, sizeof (struct charset_map_entries));
 
   n_entries = 0;
   while (1)
@@ -531,7 +530,6 @@ load_charset_map_from_file (struct charset *charset, Lisp_Object mapfile,
 	{
 	  entries->next = record_xmalloc (sizeof *entries->next);
 	  entries = entries->next;
-	  memset (entries, 0, sizeof (struct charset_map_entries));
 	  n_entries = 0;
 	}
       idx = n_entries;
