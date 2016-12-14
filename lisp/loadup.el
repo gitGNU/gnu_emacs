@@ -517,6 +517,11 @@ lost after dumping")))
                          ;; unprintable objects.
                          ((eq s 'advertised-signature-table)
                           (make-hash-table :test 'eq :weakness 'key))
+                         ;; FIXME: Incorporates obarray by value,
+                         ;; which doesn't work (chained symbols are
+                         ;; ignored).  Reconstruct at startup?
+                         ((eq s 'elisp--xref-identifier-completion-table)
+                          nil)
                          ((subrp v)
                           `(symbol-function ',(intern (subr-name v))))
                          ((and (markerp v) (null (marker-buffer v)))
