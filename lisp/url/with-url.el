@@ -27,6 +27,8 @@
 (require 'cl-lib)
 (require 'url)
 (require 'puny)
+(require 'gnutls)
+(require 'mm-url)
 
 (cl-defstruct url-request
   original-url wait timeout read-timeout
@@ -124,8 +126,7 @@ to `utf-8'.
 When using the posting methods, the data is usually encoded in
 some fashion.  Supported encodings are `url-form', `multipart'
 and `base64'."
-  (let ((hv (gensym "header-variable"))
-        (requestv (gensym "request")))
+  (let ((requestv (cl-gensym "request")))
     `(let ((,requestv 
             (make-url-request :original-url ,url
                               :timeout ,timeout
