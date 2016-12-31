@@ -1146,9 +1146,12 @@ print (Lisp_Object obj, Lisp_Object printcharfun, bool escapeflag)
       && (VECTORP (obj) || COMPILEDP (obj)				\
 	  || CHAR_TABLE_P (obj) || SUB_CHAR_TABLE_P (obj)		\
 	  || HASH_TABLE_P (obj) || FONTP (obj)))			\
-   || (! NILP (Vprint_gensym)						\
-       && SYMBOLP (obj)							\
-       && !SYMBOL_INTERNED_P (obj)))
+   || (SYMBOLP (obj)							\
+       && !SYMBOL_INTERNED_P (obj)					\
+       && ! NILP (Vprint_gensym))					\
+   || (SYMBOLP (obj)							\
+       && SYMBOL_INTERNED_P (obj)					\
+       && ! NILP (Vprint_symbols_as_references)))
 
 /* Construct Vprint_number_table according to the structure of OBJ.
    OBJ itself and all its elements will be added to Vprint_number_table
@@ -1189,8 +1192,9 @@ print_preprocess (Lisp_Object obj)
       if (!HASH_TABLE_P (Vprint_number_table))
 	Vprint_number_table = CALLN (Fmake_hash_table, QCtest, Qeq);
 
-      /* In case print-circle is nil and print-gensym is t,
-	 add OBJ to Vprint_number_table only when OBJ is a symbol.  */
+      /* In case print-circle is nil and print-gensym or
+	 print-symbols-as-references is t, add OBJ to Vprint_number_table only
+	 when OBJ is a symbol.  */
       if (! NILP (Vprint_circle) || SYMBOLP (obj))
 	{
 	  Lisp_Object num = Fgethash (obj, Vprint_number_table, Qnil);
@@ -2294,6 +2298,15 @@ If the value is `default', print the text property `charset' only when
 the value is different from what is guessed in the current charset
 priorities.  */);
   Vprint_charset_text_property = Qdefault;
+
+  DEFVAR_LISP ("print-symbols-as-references", Vprint_symbols_as_references,
+	       doc: /* Non-nil means print interned symbols using #N= and #N# syntax.
+If nil, symbols are printed normally.
+
+Setting this true makes the output harder for a human to read, but may
+parse more efficiently as input to the Lisp reader if some symbols appear
+in the output many times.  */);
+  Vprint_symbols_as_references = Qnil;
 
   /* prin1_to_string_buffer initialized in init_buffer_once in buffer.c */
   staticpro (&Vprin1_to_string_buffer);
