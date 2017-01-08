@@ -3418,19 +3418,23 @@ read1 (Lisp_Object readcharfun, int *pch, bool first_in_list)
 		      i = 0;
 		      buf[i++] = c;
 		      len = BYTES_BY_CHAR_HEAD (c);
-		      while (i < len)
+		      if (i < len)
 			{
 			  unblock_input ();
-			  c = readbyte_from_file (-1, readcharfun);
-			  if (c < 0 || ! TRAILING_CODE_P (c))
+			  while (i < len)
 			    {
-			      while (--i > 1)
-				readbyte_from_file (buf[i], readcharfun);
-			      c = BYTE8_TO_CHAR (buf[0]);
-			      block_input ();
-			      goto have_char_from_file;
+			      c = readbyte_from_file (-1, readcharfun);
+			      if (c < 0 || ! TRAILING_CODE_P (c))
+				{
+				  while (--i > 1)
+				    readbyte_from_file (buf[i], readcharfun);
+				  c = BYTE8_TO_CHAR (buf[0]);
+				  block_input ();
+				  goto have_char_from_file;
+				}
+			      buf[i++] = c;
 			    }
-			  buf[i++] = c;
+			  block_input ();
 			}
 		      c = STRING_CHAR (buf);
 		      /* fall through */
