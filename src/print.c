@@ -1151,7 +1151,10 @@ print (Lisp_Object obj, Lisp_Object printcharfun, bool escapeflag)
        && ! NILP (Vprint_gensym))					\
    || (SYMBOLP (obj)							\
        && SYMBOL_INTERNED_P (obj)					\
-       && ! NILP (Vprint_symbols_as_references)))
+       && ! NILP (Vprint_symbols_as_references)				\
+       && ! EQ (Qcomma, obj)						\
+       && ! EQ (Qcomma_at, obj)						\
+       && ! EQ (Qcomma_dot, obj)))
 
 /* Construct Vprint_number_table according to the structure of OBJ.
    OBJ itself and all its elements will be added to Vprint_number_table
