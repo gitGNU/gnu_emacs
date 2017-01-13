@@ -1151,10 +1151,7 @@ print (Lisp_Object obj, Lisp_Object printcharfun, bool escapeflag)
        && ! NILP (Vprint_gensym))					\
    || (SYMBOLP (obj)							\
        && SYMBOL_INTERNED_P (obj)					\
-       && ! NILP (Vprint_symbols_as_references)				\
-       && ! EQ (Qcomma, obj)						\
-       && ! EQ (Qcomma_at, obj)						\
-       && ! EQ (Qcomma_dot, obj)))
+       && ! NILP (Vprint_symbols_as_references)))
 
 /* Construct Vprint_number_table according to the structure of OBJ.
    OBJ itself and all its elements will be added to Vprint_number_table
@@ -1607,7 +1604,20 @@ print_object (Lisp_Object obj, Lisp_Object printcharfun, bool escapeflag)
 		   || EQ (XCAR (obj), Qcomma_at)
 		   || EQ (XCAR (obj), Qcomma_dot)))
 	{
-	  print_object (XCAR (obj), printcharfun, false);
+	  /* If print-symbols-as-references is enabled, symbols may
+	     print with "#N=" or "#N#" form.  When we print a cons
+	     cell with parens and separated elements, that's fine, but
+	     for comma symbols we depend on the reader to generate the
+	     cons cell from the special syntax.  The Lisp reader will
+	     treat "#1=,#2=foo" as setting reference 1 to ",foo", not
+	     to ",", so we can't use print_object to print out the
+	     comma symbols without breaking the ability to read the
+	     result back properly.  */
+	  printchar (',', printcharfun);
+	  if (EQ (XCAR (obj), Qcomma_at))
+	    printchar ('@', printcharfun);
+	  else if (EQ (XCAR (obj), Qcomma_dot))
+	    printchar ('.', printcharfun);
 	  new_backquote_output--;
 	  print_object (XCAR (XCDR (obj)), printcharfun, escapeflag);
 	  new_backquote_output++;
