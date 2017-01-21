@@ -29,6 +29,7 @@
 (require 'puny)
 (require 'gnutls)
 (require 'mm-url)
+(require 'url-http)
 
 (cl-defstruct url-request
   original-url wait timeout read-timeout
@@ -273,10 +274,14 @@ If given, return the value in BUFFER instead."
                (list "Accept" "*/*")
                (list "Content-Type" (car data))
                (list "Content-Length" (length (cdr data)))
-               (list "Cookies" (and (url-request-cookies req)
-                                    (not (eq (url-request-cookies req) 'read))
-                                    (with-url--cookies parsed)))
-               (list "Host" (puny-encode-string (url-host parsed))))))
+               (list "Cookies"
+                     (and (memq (url-request-cookies req) '(t write))
+                          (with-url--cookies parsed)))
+               (list "Host" (puny-encode-string (url-host parsed)))
+               (list "If-Modified-Since"
+                     (and (memq (url-request-cache req) '(t write))
+                          (when-let ((tm (url-is-cached (url-request-url req))))
+                            (url-get-normalized-date tm)))))))
         (cl-loop for (name value) in headers
                  when (and (not (cl-assoc name (url-request-headers req)
                                           :test #'cl-equalp))
@@ -351,8 +356,12 @@ If given, return the value in BUFFER instead."
                         (+ header-end size -1))))
                ;; No Content-Length; instead the data is passed in
                ;; chunks.
-               ((re-search-forward "Transfer-Encoding: *chunked" nil t)
+               ((re-search-forward "Transfer-Encoding: *chunked" header-end t)
                 (goto-char header-end)
+                ;; This could be sped up by looking at the end of the
+                ;; buffer and see whether there's a 0 length block
+                ;; there instead of traversing the entire buffer
+                ;; (which may be slow on big documents).
                 (let (length)
                   (while (looking-at "\\([0-9A-Za-z]+\\)\r?\n")
                     (setq length (string-to-number (match-string 1) 16))
@@ -368,12 +377,27 @@ If given, return the value in BUFFER instead."
 (defun with-url--process-reply (process)
   (with-url--parse-headers)
   (let* ((code (car (url-status)))
-         (req (plist-get (process-plist process) :request)))
+         (req (plist-get (process-plist process) :request))
+         (status (cadr (assq code url-http-codes))))
+    ;; Set cookies (if the caller has requested that we record
+    ;; cookies, and we've gotten some).
+    (when (and (memq (url-request-cookies req) '(t read))
+               (url-header 'cookie))
+      (url-cookie-handle-set-cookie (url-header 'cookie)))
     (when (url-request-debug req)
       (with-url--debug 'response (buffer-string)))
     (cond
      ;; We got the expected response.
      ((<= 200 code 299)
+      (with-url--callback process))
+     ;; We don't support proxies.
+     ((eq status 'use-proxy)
+      (with-url--callback
+       req '(500 (format "Redirection through proxy server not supported: %s"
+                         (url-header 'location)))))
+     ;; The document is in the cache.
+     ((eq status 'not-modified)
+      (url-cache-extract (url-cache-create-filename (url-request-url req)))
       (with-url--callback process))
      ;; Redirects.
      ((<= 300 code 399)
@@ -381,7 +405,8 @@ If given, return the value in BUFFER instead."
       (if (> (url-request-redirect-times req) 10)
           (with-url--callback req '(500 "Too many redirections"))
         (with-url--redirect process (url-header 'location))))
-     )))
+     (t
+      (with-url--callback req)))))
 
 (defun with-url--callback (process &optional status)
   (message "Calling back")
