@@ -71,12 +71,14 @@ Additional keywords can be given to `with-url' to alter its operation.
 
 The returned headers can be examined with the `url-header'
 function; the full status with the `url-status' function, and
-whether the request returned as expected with the `url-okp'
-function.
+whether the request returned as expected with the `url-okp' or
+`url-errorp' functions.
 
 :wait t
-Normal `with-url' operation is asynchronous.  If this parameter is given,
-the retrieval will be synchronous instead.
+Normal `with-url' operation is asynchronous.  If this parameter
+is given, the retrieval will be synchronous instead.  Not all
+URLs support asynchronous operation.  In particular, file: and
+ftp: documents will always be fetchedh synchronously.
 
 :timeout SECONDS
 Give up after approximately SECONDS seconds and execute BODY.
@@ -143,6 +145,7 @@ encoded as.  This defaults to `utf-8'.
 When using the posting methods, the data is usually encoded in
 some fashion.  Supported encodings are `url-form', `multipart'
 and `base64'."
+  (declare (indent 1))
   (let ((requestv (cl-gensym "request")))
     `(let ((,requestv 
             (make-url-request :original-url ,url
@@ -181,20 +184,25 @@ If given, return the value in BUFFER instead."
   (with-current-buffer (or buffer (current-buffer))
     (cdr (assq name with-url--headers))))
 
-(defun url-status (&optional buffer)
+(defun url-status (name &optional buffer)
   "Return the status of the URL request in the current buffer.
 If given, return the value in BUFFER instead."
   (with-current-buffer (or buffer (current-buffer))
-    with-url--status))
+    (cdr (assq name with-url--status))))
 
 (defun url-okp (&optional buffer)
-  "Return the status of the URL request in the current buffer.
+  "Return non-nil if the document was retrieved.
 If given, return the value in BUFFER instead."
-  (with-current-buffer (or buffer (current-buffer))
-    (and with-url--status
-         (consp with-url--status)
-         (numberp (car with-url--status))
-         (<= 200 (car with-url--status) 299))))
+  (let ((status (url-status 'response buffer)))
+    (and status
+         (consp status)
+         (numberp (car status))
+         (<= 200 (car status) 299))))
+
+(defun url-errorp (&optional buffer)
+  "Say whether there was an error when retrieving the document.
+If given, return the value in BUFFER instead."
+  (not (url-okp buffer)))
 
 (defun with-url--fetch (req)
   (unless (url-request-url req)
@@ -261,9 +269,9 @@ If given, return the value in BUFFER instead."
           (insert-file-contents-literally
            (url-filename (url-request-parsed-url req)))
         (error
-         (setq-local with-url--status
-                     (list 500 (format "Error occurred while fetching file: %s"
-                                       err)))))
+         (push (list 'response
+                     500 (format "Error occurred while fetching file: %s" err))
+               with-url--status)))
       (when (or (not (url-request-ignore-errors req))
                 (url-okp))
         (goto-char (point-min))
@@ -415,7 +423,7 @@ If given, return the value in BUFFER instead."
 
 (defun with-url--process-reply (process)
   (with-url--parse-headers)
-  (let* ((code (car (url-status)))
+  (let* ((code (car (url-status 'response)))
          (req (plist-get (process-plist process) :request))
          (status (cadr (assq code url-http-codes))))
     ;; Set cookies (if the caller has requested that we record
@@ -456,10 +464,14 @@ If given, return the value in BUFFER instead."
       (cancel-timer (url-request-timer req)))
     (set-process-sentinel process nil)
     (set-process-filter process nil)
+    (push (cons 'url (url-request-url req)) with-url--status)
+    ;; Pass the https certificate on to the caller.
+    (when (gnutls-available-p)
+      (push (cons 'tls-peer (gnutls-peer-status process)) with-url--status))
     (with-current-buffer buffer
       ;; Allow overriding the status if we have a timeout or the like.
       (when status
-        (setq with-url--status status))
+        (push (cons 'response status) with-url--status))
       ;; Delete the headers from the buffer.
       (goto-char (point-min))
       (when (re-search-forward "^\r?\n" nil t)
@@ -528,8 +540,9 @@ If given, return the value in BUFFER instead."
        ;; The first line is the status line.
        ((not with-url--status)
         ;; Well-formed status line.
-        (setq with-url--status
-              (if (looking-at "\\([^ \n]+\\) +\\([0-9]+\\) +\\([^\r\n]*\\)")
+        (push
+         (cons 'response
+               (if (looking-at "\\([^ \n]+\\) +\\([0-9]+\\) +\\([^\r\n]*\\)")
                   (list (string-to-number (match-string 2))
                         (match-string 3)
                         (match-string 1))
@@ -537,7 +550,8 @@ If given, return the value in BUFFER instead."
                 (buffer-substring
                  (point)
                  (and (re-search-forward "\r?$")
-                      (match-beginning 0))))))
+                      (match-beginning 0)))))
+         with-url--status))
        ;; Ignore all non-header lines in the header.
        ((looking-at "\\([^\r\n:]+\\): *\\([^\r\n]+\\)")
         (push (cons (intern (downcase (match-string 1)) obarray)
