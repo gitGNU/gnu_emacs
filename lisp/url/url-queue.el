@@ -62,7 +62,6 @@ This is like `url-retrieve' (which see for details of the arguments),
 but with limits on the degree of parallelism.  The variable
 `url-queue-parallel-processes' sets the number of concurrent processes.
 The variable `url-queue-timeout' sets a timeout."
-  (message "retrieving queue")
   (setq url-queue
 	(append url-queue
 		(list (make-url-queue :url url
