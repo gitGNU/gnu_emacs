@@ -68,6 +68,11 @@ The buffer is killed after BODY has exited.
 
 Additional keywords can be given to `with-url' to alter its operation.
 
+The returned headers can be examined with the `url-header'
+function; the full status with the `url-status' function, and
+whether the request returned as expected with the `url-okp'
+function.
+
 :wait t
 Normal `with-url' operation is asynchronous.  If this parameter is given,
 the retrieval will be synchronous instead.
@@ -238,7 +243,7 @@ If given, return the value in BUFFER instead."
               (and (url-request-read-timeout req)
                    (> (- now (float-time (url-request-last-read-time req)))
                       (url-request-read-timeout req))))
-      (with-url--callback (url-request-process req)))))
+      (with-url--callback (url-request-process req) '(500 "Timer expired")))))
 
 (defun with-url--sentinel (process change)
   (message "%s %s" process change)
@@ -374,11 +379,11 @@ If given, return the value in BUFFER instead."
      ((<= 300 code 399)
       (cl-incf (url-request-redirect-times req))
       (if (> (url-request-redirect-times req) 10)
-          (with-url--callback req)
+          (with-url--callback req '(500 "Too many redirections"))
         (with-url--redirect process (url-header 'location))))
      )))
 
-(defun with-url--callback (process)
+(defun with-url--callback (process &optional status)
   (message "Calling back")
   (let ((req (plist-get (process-plist process) :request))
         (buffer (process-buffer process)))
@@ -388,6 +393,9 @@ If given, return the value in BUFFER instead."
     (set-process-sentinel process nil)
     (set-process-filter process nil)
     (with-current-buffer buffer
+      ;; Allow overriding the status if we have a timeout or the like.
+      (when status
+        (setq with-url--status status))
       ;; Delete the headers from the buffer.
       (goto-char (point-min))
       (when (re-search-forward "^\r?\n" nil t)
