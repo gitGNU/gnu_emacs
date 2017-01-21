@@ -32,20 +32,23 @@
 
 (cl-defstruct url-request
   original-url wait timeout read-timeout
-  silent inhibit-cookies inhibit-cache headers
+  verbose debug cookies cache ignore-errors
+  headers
   method
   data data-charset data-encoding
   callback redirect-times
   url parsed-url process
   response-size start-time last-read-time timer)
 
-(cl-defmacro with-url ((header-variable
-                        url
+(cl-defmacro with-url ((url
                         &key wait timeout
-                        read-timeout silent
-                        inhibit-cookies
-                        inhibit-cache
+                        read-timeout
+                        (verbose 5)
+                        (cookies t)
+                        (cache t)
+                        debug
                         headers
+                        ignore-errors
                         (method "GET")
                         data
                         (data-charset 'utf-8)
@@ -60,13 +63,6 @@ Example:
 
 The buffer is killed after BODY has exited.
 
-HEADER-VARIABLE is bound to a structure that contains the response
-headers and status.  These can be accessed with `url-header' like this:
-
-  (url-header headers \"Content-Type\")
-
-Case is not significant.
-
 Additional keywords can be given to `with-url' to alter its operation.
 
 :wait t
@@ -80,11 +76,23 @@ Give up after approximately SECONDS seconds and execute BODY.
 If no data has been received for the last SECONDS seconds, give
 up and execute BODY.
 
-:silent t
-Issue no messages during operation.
+:verbose NUMBER
+The level of verbosity during operations.  0 will men no messages
+are issued.
 
-:inhibit-cookies t
-Neither send nor store cookies.
+:debug BOOL
+If non-nil, a buffer called \"*url-debug*\" will be created, and
+all network traffic, both request and response, is copied to that
+buffer.  This buffer may grow very large.
+
+:ignore-errors BOOL
+If non-nil, the body will not be executed if the contents
+specified by the URL could not be fetched.
+
+:cookies t/read/write/nil
+If nil, cookies will neither be sent nor stored.  If `read',
+cookies will be recorded, but not sent.  If `write', cookies will
+be sent, but not stored.  If nil, no cookie handling will occur.
 
 :headers ALIST
 Add ALIST to the headers sent over to the server.  This should typically
@@ -118,9 +126,9 @@ on this form:
 Elements with several values only make sense with the `multipart'
 encoding (see below).
 
-:data-coding-system CODING-SYSTEM
-What coding system this data should be encoded as.  This defaults
-to `utf-8'.
+:data-charset CHARSET
+What charset (i.e., encoded character set) this data should be
+encoded as.  This defaults to `utf-8'.
 
 :data-encoding ENCODING
 When using the posting methods, the data is usually encoded in
@@ -131,11 +139,13 @@ and `base64'."
             (make-url-request :original-url ,url
                               :timeout ,timeout
                               :read-timeout ,read-timeout
-                              :silent ,silent
-                              :inhibit-cookies ,inhibit-cookies
-                              :inhibit-cache ,inhibit-cache
+                              :verbose ,verbose
+                              :debug ,debug
+                              :cookies ,cookies
+                              :cache ,cache
                               :headers ',headers
                               :method ,method
+                              :ignore-errors ,ignore-errors
                               :data ,data
                               :data-charset ',data-charset
                               :data-encoding ,data-encoding
@@ -143,13 +153,13 @@ and `base64'."
                               :last-read-time (current-time)
                               :redirect-times 0)))
        ,(if wait
-            `(let ((,header-variable (with-url--fetch ,requestv)))
+            `(progn
+               (with-url--fetch ,requestv)
                ,@body)
           `(progn
              (setf (url-request-callback ,requestv)
                    (lambda ()
-                     (let ((,header-variable with-url--headers))
-                       ,@body)))
+                     ,@body))
              (with-url--fetch ,requestv))))))
 
 (defun with-url--fetch (req)
@@ -230,7 +240,8 @@ and `base64'."
                (list "Accept" "*/*")
                (list "Content-Type" (car data))
                (list "Content-Length" (length (cdr data)))
-               (list "Cookies" (and (not (url-request-inhibit-cookies req))
+               (list "Cookies" (and (url-request-cookies req)
+                                    (not (eq (url-request-cookies req) 'read))
                                     (with-url--cookies parsed)))
                (list "Host" (puny-encode-string (url-host parsed))))))
         (cl-loop for (name value) in headers
