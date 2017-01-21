@@ -281,6 +281,9 @@ word(s) will be searched for via `eww-search-prefix'."
        (current-buffer)
      (get-buffer-create "*eww*")))
   (eww-setup-buffer)
+  (eww--fetch-url url))
+
+(cl-defun eww--fetch-url (url &key method data)
   ;; Check whether the domain only uses "Highly Restricted" Unicode
   ;; IDNA characters.  If not, transform to punycode to indicate that
   ;; there may be funny business going on.
@@ -295,7 +298,8 @@ word(s) will be searched for via `eww-search-prefix'."
       (insert (format "Loading %s..." url))
       (goto-char (point-min)))
     (let ((buffer (current-buffer)))
-      (with-url (url)
+      (with-url (url :method method
+                     :data data)
         (eww-render nil buffer)))))
 
 ;;;###autoload (defalias 'browse-web 'eww)
@@ -1344,7 +1348,11 @@ See URL `https://developer.mozilla.org/en-US/docs/Web/HTML/Element/Input'.")
   (interactive)
   (let* ((this-input (get-text-property (point) 'eww-form))
 	 (form (plist-get this-input :eww-form))
-	 values next-submit)
+         (url (if (cdr (assq :action form))
+                  (shr-expand-url (cdr (assq :action form))
+                                  (plist-get eww-data :url))
+                (plist-get eww-data :url)))
+         values next-submit)
     (dolist (elem (sort (eww-inputs form)
 			(lambda (o1 o2)
 			  (< (car o1) (car o2)))))
@@ -1387,42 +1395,14 @@ See URL `https://developer.mozilla.org/en-US/docs/Web/HTML/Element/Input'.")
 	(push (cons (plist-get (cdr elem) :name)
 		    (or (plist-get (cdr elem) :value) ""))
 	      values)))
-    (if (and (stringp (cdr (assq :method form)))
-	     (equal (downcase (cdr (assq :method form))) "post"))
-	(let ((mtype))
-	  (dolist (x values mtype)
-	    (if (equal (car x) "file")
-		(progn
-		  (setq mtype "multipart/form-data"))))
-	  (cond ((equal mtype "multipart/form-data")
-		 (let ((boundary (mml-compute-boundary '())))
-		   (let ((url-request-method "POST")
-			 (url-request-extra-headers
-			  (list (cons "Content-Type"
-				      (concat "multipart/form-data; boundary="
-					      boundary))))
-			 (url-request-data
-			  (mm-url-encode-multipart-form-data values boundary)))
-		     (eww-browse-url (shr-expand-url
-				      (cdr (assq :action form))
-				      (plist-get eww-data :url))))))
-		(t
-		 (let ((url-request-method "POST")
-		       (url-request-extra-headers
-			'(("Content-Type" .
-			   "application/x-www-form-urlencoded")))
-		       (url-request-data
-			(mm-url-encode-www-form-urlencoded values)))
-		   (eww-browse-url (shr-expand-url
-				    (cdr (assq :action form))
-				    (plist-get eww-data :url)))))))
-      (eww-browse-url
-       (concat
-	(if (cdr (assq :action form))
-	    (shr-expand-url (cdr (assq :action form)) (plist-get eww-data :url))
-	  (plist-get eww-data :url))
-	"?"
-	(mm-url-encode-www-form-urlencoded values))))))
+    (let ((inhibit-read-only t))
+      (erase-buffer))
+    (eww--fetch-url
+     url
+     :method (if (cl-equalp (cdr (assq :method form)) "post")
+                 "POST"
+               "GET")
+     :data values)))
 
 (defun eww-browse-with-external-browser (&optional url)
   "Browse the current URL with an external browser.
