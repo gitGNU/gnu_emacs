@@ -201,6 +201,12 @@ If given, return the value in BUFFER instead."
     (setf (url-request-url req) (url-request-original-url req)))
   (setf (url-request-parsed-url req)
         (url-generic-parse-url (url-request-url req)))
+  (pcase (url-type (url-request-parsed-url req))
+    ((or "http" "https") (with-url--fetch-http req))
+    ("ftp" (with-url--fetch-ftp req))
+    ("file" (with-url--fetch-file req))))
+
+(defun with-url--fetch-http (req)
   (when (or (url-request-timeout req)
             (url-request-read-timeout req))
     (setf (url-request-timer req)
@@ -231,6 +237,39 @@ If given, return the value in BUFFER instead."
              :sentinel #'with-url--sentinel
              :filter #'with-url--filter)))
       (setf (url-request-process req) process))))
+
+(defun with-url--fetch-ftp (req)
+  (let ((parsed (url-request-parsed-url req)))
+    ;; Transform the URL into Tramp syntax and let it worry about it.
+    (with-url--fetch-file
+     (concat "/"
+             (and (url-user parsed)
+                  (format "%s@" (url-user parsed)))
+             (url-host)
+             (and (url-port parsed)
+                  (format "#s" (url-port parsed)))
+             ":"
+             (url-filename parsed)))))
+
+(defun with-url--fetch-file (req)
+  (with-current-buffer (generate-new-buffer "*request*")
+    (set-buffer-multibyte nil)
+    (let ((coding-system-for-read 'binary)
+          (coding-system-for-write 'binary)
+          (buffer (current-buffer)))
+      (condition-case err
+          (insert-file-contents-literally
+           (url-filename (url-request-parsed-url req)))
+        (error
+         (setq-local with-url--status
+                     (list 500 (format "Error occurred while fetching file: %s"
+                                       err)))))
+      (when (or (not (url-request-ignore-errors req))
+                (url-okp))
+        (goto-char (point-min))
+        (unwind-protect
+            (funcall (url-request-callback req))
+          (kill-buffer buffer))))))
 
 (defun with-url--timer (req)
   (let ((now (float-time)))
