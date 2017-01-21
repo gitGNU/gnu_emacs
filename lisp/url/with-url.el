@@ -40,6 +40,9 @@
   url parsed-url process
   response-size start-time last-read-time timer)
 
+(defvar with-url--headers nil)
+(defvar with-url--status nil)
+
 (cl-defmacro with-url ((url
                         &key wait timeout
                         read-timeout
@@ -162,6 +165,31 @@ and `base64'."
                      ,@body))
              (with-url--fetch ,requestv))))))
 
+(defun url-header (name &optional buffer)
+  "Return the value of the specified URL header name from the current buffer.
+Example use:
+
+  (url-header 'content-length)
+
+If given, return the value in BUFFER instead."
+  (with-current-buffer (or buffer (current-buffer))
+    (cdr (assq name with-url--headers))))
+
+(defun url-status (&optional buffer)
+  "Return the status of the URL request in the current buffer.
+If given, return the value in BUFFER instead."
+  (with-current-buffer (or buffer (current-buffer))
+    with-url--status))
+
+(defun url-okp (&optional buffer)
+  "Return the status of the URL request in the current buffer.
+If given, return the value in BUFFER instead."
+  (with-current-buffer (or buffer (current-buffer))
+    (and with-url--status
+         (consp with-url--status)
+         (numberp (car with-url--status))
+         (<= 200 (car with-url--status) 299))))
+
 (defun with-url--fetch (req)
   (unless (url-request-url req)
     (setf (url-request-url req) (url-request-original-url req)))
@@ -254,8 +282,21 @@ and `base64'."
                  do (format "%s: %s\n\r" name value))
         (insert "\r\n")
         (when data
-          (insert data))))
+          (insert data))
+        (when (url-request-debug req)
+          (with-url--debug 'request (buffer-string)))))
     (process-send-region process (point-min) (point-max))))
+
+(defun with-url--debug (type string)
+  (with-current-buffer (get-buffer-create "*url-debug*")
+    (insert (if (eq type 'request)
+                ">>> "
+              "<<< ")
+            (format-time-string "%Y%m%dT%H:%M:%S") "\n"
+            string)
+    (unless (bolp)
+      (insert "\n"))
+    (insert "----------\n")))
 
 (defun with-url--data (req)
   (with-temp-buffer
@@ -319,13 +360,12 @@ and `base64'."
                  (>= (buffer-size) (url-request-response-size req)))
         (with-url--process-reply process)))))
 
-(defun url-header (header name)
-  (cdr (assq name header)))
-
 (defun with-url--process-reply (process)
-  (let* ((headers (with-url--parse-headers))
-         (code (car (url-header headers 'http-status)))
+  (with-url--parse-headers)
+  (let* ((code (car (url-status)))
          (req (plist-get (process-plist process) :request)))
+    (when (url-request-debug req)
+      (with-url--debug 'response (buffer-string)))
     (cond
      ;; We got the expected response.
      ((<= 200 code 299)
@@ -335,10 +375,8 @@ and `base64'."
       (cl-incf (url-request-redirect-times req))
       (if (> (url-request-redirect-times req) 10)
           (with-url--callback req)
-        (with-url--redirect process (url-header headers 'location))))
+        (with-url--redirect process (url-header 'location))))
      )))
-
-(defvar with-url--headers)
 
 (defun with-url--callback (process)
   (message "Calling back")
@@ -350,27 +388,25 @@ and `base64'."
     (set-process-sentinel process nil)
     (set-process-filter process nil)
     (with-current-buffer buffer
-      (let ((headers (with-url--parse-headers)))
-        (setq-local with-url--headers headers)
-        ;; Delete the headers from the buffer.
+      ;; Delete the headers from the buffer.
+      (goto-char (point-min))
+      (when (re-search-forward "^\r?\n" nil t)
+        (delete-region (point-min) (point)))
+      ;; If we have a chunked transfer encoding, then we have to
+      ;; remove the chunk length indicators from the response.
+      (when (cl-equalp (url-header 'transfer-encoding) "chunked")
+        (with-url--decode-chunked))
+      ;; Text responses should have the CRLF things removed.
+      (when (string-match "^text/" (or (url-header 'content-type)
+                                       "text/html"))
         (goto-char (point-min))
-        (when (re-search-forward "^\r?\n" nil t)
-          (delete-region (point-min) (point)))
-        ;; If we have a chunked transfer encoding, then we have to
-        ;; remove the chunk length indicators from the response.
-        (when (cl-equalp (url-header headers 'transfer-encoding) "chunked")
-          (with-url--decode-chunked))
-        ;; Text responses should have the CRLF things removed.
-        (when (string-match "^text/" (or (url-header headers 'content-type)
-                                         "text/html"))
-          (goto-char (point-min))
-          (while (search-forward "\r\n" nil t)
-            (forward-char -1)
-            (delete-char -1)))
-        (goto-char (point-min))
-        (unwind-protect
-            (funcall (url-request-callback req))
-          (kill-buffer buffer))))))
+        (while (search-forward "\r\n" nil t)
+          (forward-char -1)
+          (delete-char -1)))
+      (goto-char (point-min))
+      (unwind-protect
+          (funcall (url-request-callback req))
+        (kill-buffer buffer)))))
 
 (defun with-url--decode-chunked ()
   (let (length)
@@ -405,38 +441,39 @@ and `base64'."
    (sort (url-cookie-retrieve (url-host parsed)
                               (url-filename parsed)
                               (equal (url-type parsed) "https"))
-         (lambda (x y)
-           (> (length (url-cookie-localpart x))
-              (length (url-cookie-localpart y)))))
+         (lambda (cookie1 cookie2)
+           (> (length (url-cookie-localpart cookie1))
+              (length (url-cookie-localpart cookie2)))))
    "; "))
 
 (defun with-url--parse-headers ()
   (goto-char (point-min))
+  (setq with-url--status nil
+        with-url--headers nil)
   (let ((headers nil))
     (while (not (looking-at "\r?$"))
       (cond
        ;; The first line is the status line.
-       ((null headers)
+       ((not with-url--status)
         ;; Well-formed status line.
-        (if (looking-at "\\([^ \n]+\\) +\\([0-9]+\\) +\\([^\r\n]*\\)")
-            (push (list 'http-status
-                        (string-to-number (match-string 2))
+        (setq with-url--status
+              (if (looking-at "\\([^ \n]+\\) +\\([0-9]+\\) +\\([^\r\n]*\\)")
+                  (list (string-to-number (match-string 2))
                         (match-string 3)
                         (match-string 1))
-                  headers)
-          ;; Non-well-formed status line.
-          (push (cons 'http-status (buffer-substring
-                                    (point)
-                                    (and (re-search-forward "\r?$")
-                                         (match-beginning 0))))
-                headers)))
+                ;; Non-well-formed status line.
+                (buffer-substring
+                 (point)
+                 (and (re-search-forward "\r?$")
+                      (match-beginning 0))))))
        ;; Ignore all non-header lines in the header.
        ((looking-at "\\([^\r\n:]+\\): *\\([^\r\n]+\\)")
         (push (cons (intern (downcase (match-string 1)) obarray)
                     (match-string 2))
               headers)))
       (forward-line 1))
-    (nreverse headers)))                                                     
+    (setq-local with-url--headers (nreverse headers))
+    with-url--headers))
 
 (provide 'with-url)
 
