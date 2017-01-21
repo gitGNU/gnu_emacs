@@ -499,6 +499,11 @@ If given, return the value in BUFFER instead."
       ;; remove the chunk length indicators from the response.
       (when (cl-equalp (url-header 'transfer-encoding) "chunked")
         (with-url--decode-chunked))
+      ;; The contents may be compressed.
+      (when (and (cl-equalp (url-header 'content-encoding) "gzip")
+                 (fboundp 'zlib-available-p)
+                 (zlib-available-p))
+        (zlib-decompress-region (point-min) (point-max)))
       ;; Text responses should have the CRLF things removed.
       (when (string-match "^text/" (or (url-header 'content-type)
                                        "text/html"))
