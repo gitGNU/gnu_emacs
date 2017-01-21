@@ -41,6 +41,9 @@
   url parsed-url process
   response-size start-time last-read-time timer)
 
+(defvar with-url-debug nil
+  "If non-nil, record all actions in the \"*url-debug*\" buffer.")
+
 (defvar with-url--headers nil)
 (defvar with-url--status nil)
 
@@ -152,7 +155,7 @@ and `base64'."
                               :timeout ,timeout
                               :read-timeout ,read-timeout
                               :verbose ,verbose
-                              :debug ,debug
+                              :debug ,(or with-url-debug debug)
                               :cookies ,cookies
                               :cache ,cache
                               :headers ',headers
@@ -164,6 +167,7 @@ and `base64'."
                               :start-time (current-time)
                               :last-read-time (current-time)
                               :redirect-times 0)))
+       (message "Foo %s" ,method)
        ,(if wait
             `(progn
                (with-url--fetch ,requestv)
@@ -294,7 +298,7 @@ If given, return the value in BUFFER instead."
       (with-url--callback (url-request-process req) '(500 "Timer expired")))))
 
 (defun with-url--sentinel (process change)
-  (message "%s %s" process change)
+  (message "%s %s %s" process change (process-status process))
   (cond
    ((equal change "open\n")
     (with-url--send-request process))
@@ -339,10 +343,10 @@ If given, return the value in BUFFER instead."
                  when (and (not (cl-assoc name (url-request-headers req)
                                           :test #'cl-equalp))
                            value)
-                 do (format "%s: %s\n\r" name value))
+                 do (insert (format "%s: %s\r\n" name value)))
         (cl-loop for (name value) in (url-request-headers req)
                  when value
-                 do (format "%s: %s\n\r" name value))
+                 do (insert (format "%s: %s\r\n" name value)))
         (insert "\r\n")
         (when data
           (insert (caddr data)))
@@ -352,6 +356,7 @@ If given, return the value in BUFFER instead."
 
 (defun with-url--debug (type string)
   (with-current-buffer (get-buffer-create "*url-debug*")
+    (goto-char (point-max))
     (insert (if (eq type 'request)
                 ">>> "
               "<<< ")
