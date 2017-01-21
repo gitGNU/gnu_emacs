@@ -459,15 +459,15 @@ If given, return the value in BUFFER instead."
   (message "Calling back")
   (let ((req (plist-get (process-plist process) :request))
         (buffer (process-buffer process)))
+    ;; Pass the https certificate on to the caller.
+    (when (gnutls-available-p)
+      (push (cons 'tls-peer (gnutls-peer-status process)) with-url--status))
     (delete-process process)
     (when (url-request-timer req)
       (cancel-timer (url-request-timer req)))
     (set-process-sentinel process nil)
     (set-process-filter process nil)
     (push (cons 'url (url-request-url req)) with-url--status)
-    ;; Pass the https certificate on to the caller.
-    (when (gnutls-available-p)
-      (push (cons 'tls-peer (gnutls-peer-status process)) with-url--status))
     (with-current-buffer buffer
       ;; Allow overriding the status if we have a timeout or the like.
       (when status
