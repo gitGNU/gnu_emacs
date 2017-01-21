@@ -31,6 +31,7 @@
 (eval-when-compile (require 'cl-lib))
 (require 'browse-url)
 (require 'url-parse)
+(require 'with-url)
 
 (defcustom url-queue-parallel-processes 6
   "The number of concurrent processes."
@@ -61,6 +62,7 @@ This is like `url-retrieve' (which see for details of the arguments),
 but with limits on the degree of parallelism.  The variable
 `url-queue-parallel-processes' sets the number of concurrent processes.
 The variable `url-queue-timeout' sets a timeout."
+  (message "retrieving queue")
   (setq url-queue
 	(append url-queue
 		(list (make-url-queue :url url
@@ -100,7 +102,6 @@ The variable `url-queue-timeout' sets a timeout."
               (run-with-idle-timer 1 1 #'url-queue-check-progress))))))
 
 (defun url-queue-run-queue ()
-  (url-queue-prune-old-entries)
   (let ((running 0)
 	waiting)
     (dolist (entry url-queue)
@@ -121,71 +122,33 @@ The variable `url-queue-timeout' sets a timeout."
       (cancel-timer url-queue-progress-timer)
       (setq url-queue-progress-timer nil))))
 
-(defun url-queue-callback-function (status job)
+(defun url-queue-callback-function (job)
   (setq url-queue (delq job url-queue))
-  (when (and (eq (car status) :error)
-	     (eq (cadr (cadr status)) 'connection-failed))
+  (when (and (url-errorp)
+             ;; FIXME: Push the connection failed status to the status
+	     ;;(eq (cadr (cadr status)) 'connection-failed)
+             )
     ;; If we get a connection error, then flush all other jobs from
     ;; the host from the queue.  This particularly makes sense if the
     ;; error really is a DNS resolver issue, which happens
     ;; synchronously and totally halts Emacs.
-    (url-queue-remove-jobs-from-host
-     (plist-get (nthcdr 3 (cadr status)) :host)))
+    (url-queue-remove-jobs-from-host (url-host (url-generic-parse-url job))))
   (url-queue-run-queue)
-  (apply (url-queue-callback job) (cons status (url-queue-cbargs job))))
+  (apply (url-queue-callback job) (url-queue-cbargs job)))
 
 (defun url-queue-remove-jobs-from-host (host)
-  (let ((jobs nil))
-    (dolist (job url-queue)
-      (when (equal (url-host (url-generic-parse-url (url-queue-url job)))
-		   host)
-	(push job jobs)))
-    (dolist (job jobs)
-      (url-queue-kill-job job)
+  (dolist (job url-queue)
+    (when (equal (url-host (url-generic-parse-url (url-queue-url job)))
+                 host)
       (setq url-queue (delq job url-queue)))))
 
 (defun url-queue-start-retrieve (job)
-  (setf (url-queue-buffer job)
-	(ignore-errors
-	  (let ((url-request-noninteractive t))
-	    (url-retrieve (url-queue-url job)
-			  #'url-queue-callback-function (list job)
-			  (url-queue-silentp job)
-			  (url-queue-inhibit-cookiesp job))))))
-
-(defun url-queue-prune-old-entries ()
-  (let (dead-jobs)
-    (dolist (job url-queue)
-      ;; Kill jobs that have lasted longer than the timeout.
-      (when (and (url-queue-start-time job)
-		 (> (- (float-time) (url-queue-start-time job))
-		    url-queue-timeout))
-	(push job dead-jobs)))
-    (dolist (job dead-jobs)
-      (url-queue-kill-job job)
-      (setq url-queue (delq job url-queue)))))
-
-(defun url-queue-kill-job (job)
-  (when (bufferp (url-queue-buffer job))
-    (let (process)
-      (while (setq process (get-buffer-process (url-queue-buffer job)))
-	(set-process-sentinel process 'ignore)
-	(ignore-errors
-	  (delete-process process)))))
-  ;; Call the callback with an error message to ensure that the caller
-  ;; is notified that the job has failed.
-  (with-current-buffer
-      (if (and (bufferp (url-queue-buffer job))
-	       (buffer-live-p (url-queue-buffer job)))
-	  ;; Use the (partially filled) process buffer it it exists.
-	  (url-queue-buffer job)
-	;; If not, just create a new buffer, which will probably be
-	;; killed again by the caller.
-	(generate-new-buffer " *temp*"))
-    (apply (url-queue-callback job)
-	   (cons (list :error (list 'error 'url-queue-timeout
-				    "Queue timeout exceeded"))
-		 (url-queue-cbargs job)))))
+  (with-url ((url-queue-url job)
+             :verbose (if (url-queue-silentp job)
+                          0 5)
+             :cookies (not (url-queue-inhibit-cookiesp job))
+             :timeout url-queue-timeout)
+    (url-queue-callback-function job)))
 
 (provide 'url-queue)
 
