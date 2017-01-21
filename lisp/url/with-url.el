@@ -253,9 +253,9 @@ If given, return the value in BUFFER instead."
      (concat "/"
              (and (url-user parsed)
                   (format "%s@" (url-user parsed)))
-             (url-host)
+             (url-host parsed)
              (and (url-port parsed)
-                  (format "#s" (url-port parsed)))
+                  (format "#%s" (url-port parsed)))
              ":"
              (url-filename parsed)))))
 
@@ -305,10 +305,15 @@ If given, return the value in BUFFER instead."
     (set-buffer-multibyte nil)
     (let* ((req (plist-get (process-plist process) :request))
            (parsed (url-request-parsed-url req)))
-      (insert (format "GET %s HTTP/1.1\r\n"
+      (insert (format "%s %s%s HTTP/1.1\r\n"
+                      (url-request-method req)
                       (if (zerop (length (url-filename parsed)))
                           "/"
-                        (url-filename parsed))))
+                        (url-filename parsed))
+                      (if (and (equal (url-request-method req) "GET")
+                               (url-request-data req))
+                          (concat "?" (caddr (with-url--data req 'url-encode)))
+                        "")))
       (let* ((data (with-url--data req))
              (headers
               (list
@@ -320,7 +325,8 @@ If given, return the value in BUFFER instead."
                           "gzip"))
                (list "Accept" "*/*")
                (list "Content-Type" (car data))
-               (list "Content-Length" (length (cdr data)))
+               (list "Content-Transfer-Encoding" (cadr data))
+               (list "Content-Length" (length (caddr data)))
                (list "Cookies"
                      (and (memq (url-request-cookies req) '(t write))
                           (with-url--cookies parsed)))
@@ -339,7 +345,7 @@ If given, return the value in BUFFER instead."
                  do (format "%s: %s\n\r" name value))
         (insert "\r\n")
         (when data
-          (insert data))
+          (insert (caddr data)))
         (when (url-request-debug req)
           (with-url--debug 'request (buffer-string)))))
     (process-send-region process (point-min) (point-max))))
@@ -355,23 +361,30 @@ If given, return the value in BUFFER instead."
       (insert "\n"))
     (insert "----------\n")))
 
-(defun with-url--data (req)
+(defun with-url--data (req &optional encoding)
   (with-temp-buffer
     (set-buffer-multibyte nil)
-    (when (url-request-data req)
-      (insert (encode-coding-string (url-request-data req)
-                                    (url-request-data-charset req)))
-      (cl-case (url-request-data-encoding req)
+    (when-let ((data (url-request-data req)))
+      (cl-case (or encoding
+                   (url-request-data-encoding req))
         (url-encode
-         (cons "application/x-www-form-urlencoded"
-               (mm-url-form-encode-xwfu (buffer-string))))
+         (list "application/x-www-form-urlencoded"
+               nil
+               (if (stringp data)
+                   (encode-coding-string data (url-request-data-charset req))
+                 (mm-url-encode-www-form-urlencoded data))))
         (multipart
          (let ((boundary (mml-compute-boundary '())))
-           (cons (concat "multipart/form-data; boundary=" boundary)
+           (list (concat "multipart/form-data; boundary=" boundary)
+                 nil
                  (mm-url-encode-multipart-form-data values boundary))))
         (base64
+         (if (stringp (url-request-data req))
+             (insert (encode-coding-string data (url-request-data-charset req)))
+           (mm-url-encode-www-form-urlencoded data))
          (base64-encode-region (point-min) (point-max))
-         (cons "application/x-www-form-urlencoded"
+         (list "application/x-www-form-urlencoded"
+               "base64"
                (buffer-string)))))))
 
 (defun with-url--filter (process string)
