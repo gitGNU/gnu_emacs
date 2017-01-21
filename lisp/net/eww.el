@@ -32,6 +32,7 @@
 (require 'url-util)			; for url-get-url-at-point
 (require 'mm-url)
 (require 'puny)
+(require 'with-url)
 (eval-when-compile (require 'subr-x)) ;; for string-trim
 
 (defgroup eww nil
@@ -286,15 +287,16 @@ word(s) will be searched for via `eww-search-prefix'."
   (let ((parsed (url-generic-parse-url url)))
     (unless (puny-highly-restrictive-domain-p (url-host parsed))
       (setf (url-host parsed) (puny-encode-domain (url-host parsed)))
-      (setq url (url-recreate-url parsed))))
-  (plist-put eww-data :url url)
-  (plist-put eww-data :title "")
-  (eww-update-header-line-format)
-  (let ((inhibit-read-only t))
-    (insert (format "Loading %s..." url))
-    (goto-char (point-min)))
-  (url-retrieve url 'eww-render
-		(list url nil (current-buffer))))
+      (setq url (url-recreate-url parsed)))
+    (plist-put eww-data :url url)
+    (plist-put eww-data :title "")
+    (eww-update-header-line-format)
+    (let ((inhibit-read-only t))
+      (insert (format "Loading %s..." url))
+      (goto-char (point-min)))
+    (let ((buffer (current-buffer)))
+      (with-url (url)
+        (eww-render nil buffer)))))
 
 ;;;###autoload (defalias 'browse-web 'eww)
 
@@ -334,63 +336,47 @@ Currently this means either text/html or application/xhtml+xml."
   (member content-type '("text/html"
 			 "application/xhtml+xml")))
 
-(defun eww-render (status url &optional point buffer encode)
-  (let ((redirect (plist-get status :redirect)))
-    (when redirect
-      (setq url redirect)))
-  (let* ((headers (eww-parse-headers))
+(defun eww-render (&optional point buffer encode)
+  (let* ((url (url-status 'url))
 	 (content-type
 	  (mail-header-parse-content-type
-           (if (zerop (length (cdr (assoc "content-type" headers))))
-	       "text/plain"
-             (cdr (assoc "content-type" headers)))))
+           (or (url-header 'content-type) "text/plain")))
 	 (charset (intern
 		   (downcase
 		    (or (cdr (assq 'charset (cdr content-type)))
 			(eww-detect-charset (eww-html-p (car content-type)))
 			"utf-8"))))
-	 (data-buffer (current-buffer))
 	 last-coding-system-used)
     ;; Save the https peer status.
     (with-current-buffer buffer
-      (plist-put eww-data :peer (plist-get status :peer)))
-    (unwind-protect
-	(progn
-	  (cond
-           ((and eww-use-external-browser-for-content-type
-                 (string-match-p eww-use-external-browser-for-content-type
-                                 (car content-type)))
-            (eww-browse-with-external-browser url))
-	   ((eww-html-p (car content-type))
-	    (eww-display-html charset url nil point buffer encode))
-	   ((equal (car content-type) "application/pdf")
-	    (eww-display-pdf))
-	   ((string-match-p "\\`image/" (car content-type))
-	    (eww-display-image buffer))
-	   (t
-	    (eww-display-raw buffer (or encode charset 'utf-8))))
-	  (with-current-buffer buffer
-	    (plist-put eww-data :url url)
-	    (eww-update-header-line-format)
-	    (setq eww-history-position 0)
-	    (and last-coding-system-used
-		 (set-buffer-file-coding-system last-coding-system-used))
-	    (run-hooks 'eww-after-render-hook)))
-      (kill-buffer data-buffer))))
-
-(defun eww-parse-headers ()
-  (let ((headers nil))
-    (goto-char (point-min))
-    (while (and (not (eobp))
-		(not (eolp)))
-      (when (looking-at "\\([^:]+\\): *\\(.*\\)")
-	(push (cons (downcase (match-string 1))
-		    (match-string 2))
-	      headers))
-      (forward-line 1))
-    (unless (eobp)
-      (forward-line 1))
-    headers))
+      (plist-put eww-data :peer (url-status 'tls-peer)))
+    (cond
+     ((url-errorp)
+      (with-current-buffer buffer
+        (erase-buffer)
+        (insert (format "Error when fetching %s:\n%s %s\n"
+                        url (car (url-status 'response))
+                        (cadr (url-status 'response))))
+        (goto-char (point-min))))
+     ((and eww-use-external-browser-for-content-type
+           (string-match-p eww-use-external-browser-for-content-type
+                           (car content-type)))
+      (eww-browse-with-external-browser url))
+     ((eww-html-p (car content-type))
+      (eww-display-html charset url nil point buffer encode))
+     ((equal (car content-type) "application/pdf")
+      (eww-display-pdf))
+     ((string-match-p "\\`image/" (car content-type))
+      (eww-display-image buffer))
+     (t
+      (eww-display-raw buffer (or encode charset 'utf-8))))
+    (with-current-buffer buffer
+      (plist-put eww-data :url url)
+      (eww-update-header-line-format)
+      (setq eww-history-position 0)
+      (and last-coding-system-used
+           (set-buffer-file-coding-system last-coding-system-used))
+      (run-hooks 'eww-after-render-hook))))
 
 (defun eww-detect-charset (html-p)
   (let ((case-fold-search t)
@@ -884,14 +870,16 @@ appears in a <link> or <a> tag."
 If LOCAL (the command prefix), don't reload the page from the
 network, but just re-display the HTML already fetched."
   (interactive "P")
-  (let ((url (plist-get eww-data :url)))
+  (let ((url (plist-get eww-data :url))
+        (point (point))
+        (buffer (current-buffer)))
     (if local
 	(if (null (plist-get eww-data :dom))
 	    (error "No current HTML data")
 	  (eww-display-html 'utf-8 url (plist-get eww-data :dom)
 			    (point) (current-buffer)))
-      (url-retrieve url 'eww-render
-		    (list url (point) (current-buffer) encode)))))
+      (with-url (url)
+        (eww-render point buffer encode)))))
 
 ;; Form support.
 
@@ -1486,19 +1474,16 @@ Differences in #targets are ignored."
   (let ((url (get-text-property (point) 'shr-url)))
     (if (not url)
         (message "No URL under point")
-      (url-retrieve url 'eww-download-callback (list url)))))
-
-(defun eww-download-callback (status url)
-  (unless (plist-get status :error)
-    (let* ((obj (url-generic-parse-url url))
-           (path (car (url-path-and-query obj)))
-           (file (eww-make-unique-file-name
-                  (eww-decode-url-file-name (file-name-nondirectory path))
-                  eww-download-directory)))
-      (goto-char (point-min))
-      (re-search-forward "\r?\n\r?\n")
-      (write-region (point) (point-max) file)
-      (message "Saved %s" file))))
+      (with-url (url)
+        (if (url-errorp)
+            (message "Error while downloading: %s" (url-status 'response))
+          (let* ((obj (url-generic-parse-url url))
+                 (path (car (url-path-and-query obj)))
+                 (file (eww-make-unique-file-name
+                        (eww-decode-url-file-name (file-name-nondirectory path))
+                        eww-download-directory)))
+            (write-region (point) (point-max) file)
+            (message "Saved %s" file)))))))
 
 (defun eww-decode-url-file-name (string)
   (let* ((binary (url-unhex-string string))
