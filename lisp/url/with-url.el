@@ -39,7 +39,8 @@
   data data-charset data-encoding
   callback redirect-times
   url parsed-url process
-  response-size start-time last-read-time timer)
+  response-size start-time last-read-time timer
+  finished)
 
 (defvar with-url-debug nil
   "If non-nil, record all actions in the \"*url-debug*\" buffer.")
@@ -167,7 +168,6 @@ and `base64'."
                               :start-time (current-time)
                               :last-read-time (current-time)
                               :redirect-times 0)))
-       (message "Foo %s" ,method)
        ,(if wait
             `(progn
                (with-url--fetch ,requestv)
@@ -298,11 +298,18 @@ If given, return the value in BUFFER instead."
       (with-url--callback (url-request-process req) '(500 "Timer expired")))))
 
 (defun with-url--sentinel (process change)
-  (message "%s %s %s" process change (process-status process))
-  (cond
-   ((equal change "open\n")
-    (with-url--send-request process))
-   ))
+  (pcase change
+    ("open\n"
+     (with-url--send-request process))
+    ("deleted\n"
+     (let ((req (plist-get (process-plist process) :request)))
+       ;; We'll be in this situation if the peer closes the
+       ;; connection.  If we ourselves have killed the connection,
+       ;; then `url-request-finished' will be set.
+       (unless (url-request-finished req)
+         (with-url--callback
+          process (list 500 (format "Peer closed connection: %s"
+                                    (process-status process)))))))))
 
 (defun with-url--send-request (process)
   (with-temp-buffer
@@ -479,12 +486,12 @@ If given, return the value in BUFFER instead."
       (with-url--callback process)))))
 
 (defun with-url--callback (process &optional status)
-  (message "Calling back")
   (let ((req (plist-get (process-plist process) :request))
         (buffer (process-buffer process)))
     ;; Pass the https certificate on to the caller.
     (when (gnutls-available-p)
       (push (cons 'tls-peer (gnutls-peer-status process)) with-url--status))
+    (setf (url-request-finished req) t)
     (delete-process process)
     (when (url-request-timer req)
       (cancel-timer (url-request-timer req)))
@@ -536,7 +543,8 @@ If given, return the value in BUFFER instead."
   (let ((req (plist-get (process-plist process) :request)))
     (setf (url-request-url req) location
           (url-request-parsed-url req) nil
-          (url-request-response-size req) nil)
+          (url-request-response-size req) nil
+          (url-request-finished req) nil)
     (set-process-sentinel process nil)
     (set-process-filter process nil)
     (when (url-request-timer req)
