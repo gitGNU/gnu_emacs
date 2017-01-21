@@ -453,8 +453,9 @@ If given, return the value in BUFFER instead."
      ;; We don't support proxies.
      ((eq status 'use-proxy)
       (with-url--callback
-       req '(500 (format "Redirection through proxy server not supported: %s"
-                         (url-header 'location)))))
+       process '(500 (format
+                      "Redirection through proxy server not supported: %s"
+                      (url-header 'location)))))
      ;; The document is in the cache.
      ((eq status 'not-modified)
       (url-cache-extract (url-cache-create-filename (url-request-url req)))
@@ -463,10 +464,10 @@ If given, return the value in BUFFER instead."
      ((<= 300 code 399)
       (cl-incf (url-request-redirect-times req))
       (if (> (url-request-redirect-times req) 10)
-          (with-url--callback req '(500 "Too many redirections"))
+          (with-url--callback process '(500 "Too many redirections"))
         (with-url--redirect process (url-header 'location))))
      (t
-      (with-url--callback req)))))
+      (with-url--callback process)))))
 
 (defun with-url--callback (process &optional status)
   (message "Calling back")
