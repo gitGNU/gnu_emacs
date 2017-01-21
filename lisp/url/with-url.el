@@ -170,8 +170,14 @@ and `base64'."
                               :redirect-times 0)))
        ,(if wait
             `(progn
-               (with-url--fetch ,requestv)
-               ,@body)
+               (with-url--wait ,requestv)
+               (let ((buffer (current-buffer)))
+                 (unwind-protect
+                     (when (or (not (url-request-ignore-errors req))
+                               (url-okp))
+                       (goto-char (point-min))
+                       ,@body)
+                   (kill-buffer buffer))))
           `(progn
              (setf (url-request-callback ,requestv)
                    (lambda ()
@@ -301,15 +307,32 @@ If given, return the value in BUFFER instead."
   (pcase change
     ("open\n"
      (with-url--send-request process))
-    ("deleted\n"
+    ((or "deleted\n" "connection broken by remote peer\n")
      (let ((req (plist-get (process-plist process) :request)))
        ;; We'll be in this situation if the peer closes the
        ;; connection.  If we ourselves have killed the connection,
        ;; then `url-request-finished' will be set.
        (unless (url-request-finished req)
-         (with-url--callback
-          process (list 500 (format "Peer closed connection: %s"
-                                    (process-status process)))))))))
+         ;; If we have headers, and there's no content-length there,
+         ;; nor any chunked encoding, then we may have gotten the
+         ;; complete document anyway.
+         (with-current-buffer (process-buffer process)
+           (if (with-url--unexpected-early-close process)
+               (with-url--process-reply process)
+             ;; Nope, it's an error.
+             (with-url--callback
+              process (list 500 (format "Peer closed connection: %s"
+                                        (process-status process)))))))))))
+
+(defun with-url--unexpected-early-close (process)
+  (goto-char (point-min))
+  (when-let ((header-end (re-search-forward "\r?\n\r?\n" nil t)))
+    (goto-char (point-min))
+    (let ((case-fold-search t))
+      (and (not (re-search-forward "content-length: *\\([0-9]+\\)"
+                                   header-end t))
+           (not (re-search-forward "Transfer-Encoding: *chunked"
+                                   header-end t))))))
 
 (defun with-url--send-request (process)
   (with-temp-buffer
@@ -486,6 +509,7 @@ If given, return the value in BUFFER instead."
       (with-url--callback process)))))
 
 (defun with-url--callback (process &optional status)
+  (message "Calling back")
   (let ((req (plist-get (process-plist process) :request))
         (buffer (process-buffer process)))
     ;; Pass the https certificate on to the caller.
@@ -596,6 +620,11 @@ If given, return the value in BUFFER instead."
       (forward-line 1))
     (setq-local with-url--headers (nreverse headers))
     with-url--headers))
+
+(defun with-url--wait (req)
+  (with-url--fetch req)
+  (while (not (url-request-finished req))
+    (sleep-for 0.1)))
 
 (provide 'with-url)
 
