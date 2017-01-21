@@ -38,6 +38,7 @@
 (require 'seq)
 (require 'svg)
 (require 'image)
+(require 'with-url)
 
 (defgroup shr nil
   "Simple HTML Renderer"
@@ -306,20 +307,20 @@ redirects somewhere else."
       (message "No URL under point"))
      ;; Resolve redirected URLs.
      ((equal url (car kill-ring))
-      (url-retrieve
-       url
-       (lambda (a)
-	 (when (and (consp a)
-		    (eq (car a) :redirect))
-	   (with-temp-buffer
-	     (insert (cadr a))
-	     (goto-char (point-min))
-	     ;; Remove common tracking junk from the URL.
-	     (when (re-search-forward ".utm_.*" nil t)
-	       (replace-match "" t t))
-	     (message "Copied %s" (buffer-string))
-	     (copy-region-as-kill (point-min) (point-max)))))
-       nil t))
+      (with-url (url :verbose 0
+                     :cookies nil)
+        (when (and (url-okp)
+                   (not (equal (url-status 'url) url)))
+          ;; We have a redirection.
+          (let ((url (url-status 'url)))
+            (with-temp-buffer
+              (insert url)
+              (goto-char (point-min))
+              ;; Remove common tracking junk from the URL.
+              (when (re-search-forward ".utm_.*" nil t)
+                (replace-match "" t t))
+              (message "Copied %s" (buffer-string))
+              (copy-region-as-kill (point-min) (point-max)))))))
      ;; Copy the URL to the kill ring.
      (t
       (with-temp-buffer
@@ -403,13 +404,16 @@ the URL of the image to the kill buffer instead."
 (defun shr-insert-image ()
   "Insert the image under point into the buffer."
   (interactive)
-  (let ((url (get-text-property (point) 'image-url)))
+  (let ((url (get-text-property (point) 'image-url))
+        (buffer (current-buffer))
+        (start (1- (point)))
+        (end (point-marker)))
     (if (not url)
 	(message "No image under point")
       (message "Inserting %s..." url)
-      (url-retrieve url 'shr-image-fetched
-		    (list (current-buffer) (1- (point)) (point-marker))
-		    t t))))
+      (with-url (url :verbose 0
+                     :cookies nil)
+        (shr-image-fetched buffer start end)))))
 
 (defun shr-zoom-image ()
   "Toggle the image size.
@@ -433,17 +437,19 @@ size, and full-buffer size."
 	(when (> (- (point) start) 2)
 	  (delete-region start (1- (point)))))
       (message "Inserting %s..." url)
-      (url-retrieve url 'shr-image-fetched
-		    (list (current-buffer) (1- (point)) (point-marker)
-			  (list (cons 'size
-				      (cond ((or (eq size 'default)
-						 (null size))
-					     'original)
-					    ((eq size 'original)
-					     'full)
-					    ((eq size 'full)
-					     'default)))))
-		    t))))
+      (let ((buffer (current-buffer))
+            (start (1- (point)))
+            (end (point-marker)))
+        (with-url (url :verbose 0)
+          (shr-image-fetched buffer start end
+                             (list (cons 'size
+                                         (cond ((or (eq size 'default)
+                                                    (null size))
+                                                'original)
+                                               ((eq size 'original)
+                                                'full)
+                                               ((eq size 'full)
+                                                'default))))))))))
 
 ;;; Utility functions.
 
@@ -910,40 +916,30 @@ If EXTERNAL, browse the URL using `shr-external-browser'."
   (let ((url (get-text-property (point) 'shr-url)))
     (if (not url)
 	(message "No link under point")
-      (url-retrieve (shr-encode-url url)
-		    'shr-store-contents (list url directory)
-		    nil t))))
+      (with-url ((shr-encode-url url) :cookies nil)
+        (if (url-errorp)
+            (message "Couldn't fetch URL")
+          (write-region (point) (point-max)
+                        (expand-file-name (file-name-nondirectory url)
+                                          directory)))))))
 
-(defun shr-store-contents (status url directory)
-  (unless (plist-get status :error)
-    (when (or (search-forward "\n\n" nil t)
-	      (search-forward "\r\n\r\n" nil t))
-      (write-region (point) (point-max)
-		    (expand-file-name (file-name-nondirectory url)
-				      directory)))))
-
-(defun shr-image-fetched (status buffer start end &optional flags)
-  (let ((image-buffer (current-buffer)))
-    (when (and (buffer-name buffer)
-	       (not (plist-get status :error)))
-      (url-store-in-cache image-buffer)
-      (when (or (search-forward "\n\n" nil t)
-		(search-forward "\r\n\r\n" nil t))
-	(let ((data (shr-parse-image-data)))
-	  (with-current-buffer buffer
-	    (save-excursion
-	      (let ((alt (buffer-substring start end))
-		    (properties (text-properties-at start))
-		    (inhibit-read-only t))
-		(delete-region start end)
-		(goto-char start)
-		(funcall shr-put-image-function data alt flags)
-		(while properties
-		  (let ((type (pop properties))
-			(value (pop properties)))
-		    (unless (memq type '(display image-size))
-		      (put-text-property start (point) type value))))))))))
-    (kill-buffer image-buffer)))
+(defun shr-image-fetched (buffer start end &optional flags)
+  (when (and (buffer-name buffer)
+             (url-okp))
+    (let ((data (shr-parse-image-data)))
+      (with-current-buffer buffer
+        (save-excursion
+          (let ((alt (buffer-substring start end))
+                (properties (text-properties-at start))
+                (inhibit-read-only t))
+            (delete-region start end)
+            (goto-char start)
+            (funcall shr-put-image-function data alt flags)
+            (while properties
+              (let ((type (pop properties))
+                    (value (pop properties)))
+                (unless (memq type '(display image-size))
+                  (put-text-property start (point) type value))))))))))
 
 (defun shr-image-from-data (data)
   "Return an image from the data: URI content DATA."
@@ -1102,9 +1098,12 @@ START, and END.  Note that START and END should be markers."
 		   (funcall shr-put-image-function
 			    image (buffer-substring start end))
 		   (delete-region (point) end))))
-	 (url-retrieve url 'shr-image-fetched
-		       (list (current-buffer) start end)
-		       t t)))))
+         (let ((buffer (current-buffer))
+               (start (1- (point)))
+               (end (point-marker)))
+           (with-url (url :verbose 0
+                          :cookies nil)
+             (shr-image-fetched buffer start end)))))))
 
 (defun shr-heading (dom &rest types)
   (shr-ensure-paragraph)
