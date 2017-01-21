@@ -283,7 +283,7 @@ word(s) will be searched for via `eww-search-prefix'."
   (eww-setup-buffer)
   (eww--fetch-url url))
 
-(cl-defun eww--fetch-url (url &key method data)
+(cl-defun eww--fetch-url (url &key (method "GET") data)
   ;; Check whether the domain only uses "Highly Restricted" Unicode
   ;; IDNA characters.  If not, transform to punycode to indicate that
   ;; there may be funny business going on.
@@ -357,11 +357,12 @@ Currently this means either text/html or application/xhtml+xml."
     (cond
      ((url-errorp)
       (with-current-buffer buffer
-        (erase-buffer)
-        (insert (format "Error when fetching %s:\n%s %s\n"
-                        url (car (url-status 'response))
-                        (cadr (url-status 'response))))
-        (goto-char (point-min))))
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (insert (format "Error when fetching '%s':\n%s %s\n"
+                          url (car (url-status 'response))
+                          (cadr (url-status 'response))))
+          (goto-char (point-min)))))
      ((and eww-use-external-browser-for-content-type
            (string-match-p eww-use-external-browser-for-content-type
                            (car content-type)))
@@ -490,7 +491,7 @@ Currently this means either text/html or application/xhtml+xml."
   (when (and (cl-equalp (dom-attr dom 'http-equiv) "refresh")
              (< eww-redirect-level 5))
     (when-let (refresh (dom-attr dom 'content))
-      (when (or (string-match "^\\([0-9]+\\) *;.*url=\"\\([^\"]+\\)\"" refresh)
+      (when (or (string-match "^\\([0-9]+\\) *;.*url=[\"']\\([^\"']+\\)[\"']" refresh)
                 (string-match "^\\([0-9]+\\) *;.*url=\\([^ ]+\\)" refresh))
         (let ((timeout (match-string 1 refresh))
               (url (match-string 2 refresh))
