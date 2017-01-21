@@ -155,7 +155,7 @@ and `base64'."
                               :timeout ,timeout
                               :read-timeout ,read-timeout
                               :verbose ,verbose
-                              :debug ,(or with-url-debug debug)
+                              :debug ,debug
                               :cookies ,cookies
                               :cache ,cache
                               :headers ',headers
@@ -316,7 +316,8 @@ If given, return the value in BUFFER instead."
                         (url-filename parsed))
                       (if (and (equal (url-request-method req) "GET")
                                (url-request-data req))
-                          (concat "?" (caddr (with-url--data req 'url-encode)))
+                          (concat "?" (cl-caddr
+                                       (with-url--data req 'url-encode)))
                         "")))
       (let* ((data (with-url--data req))
              (headers
@@ -326,11 +327,12 @@ If given, return the value in BUFFER instead."
                (list "Accept-Encoding"
                      (and (fboundp 'zlib-available-p)
                           (zlib-available-p)
+                          nil
                           "gzip"))
                (list "Accept" "*/*")
                (list "Content-Type" (car data))
                (list "Content-Transfer-Encoding" (cadr data))
-               (list "Content-Length" (length (caddr data)))
+               (list "Content-Length" (length (cl-caddr data)))
                (list "Cookies"
                      (and (memq (url-request-cookies req) '(t write))
                           (with-url--cookies parsed)))
@@ -349,8 +351,9 @@ If given, return the value in BUFFER instead."
                  do (insert (format "%s: %s\r\n" name value)))
         (insert "\r\n")
         (when data
-          (insert (caddr data)))
-        (when (url-request-debug req)
+          (insert (cl-caddr data)))
+        (when (or (url-request-debug req)
+                  with-url-debug)
           (with-url--debug 'request (buffer-string)))))
     (process-send-region process (point-min) (point-max))))
 
@@ -449,7 +452,8 @@ If given, return the value in BUFFER instead."
     (when (and (memq (url-request-cookies req) '(t read))
                (url-header 'cookie))
       (url-cookie-handle-set-cookie (url-header 'cookie)))
-    (when (url-request-debug req)
+    (when (or (url-request-debug req)
+              with-url-debug)
       (with-url--debug 'response (buffer-string)))
     (cond
      ;; We got the expected response.
