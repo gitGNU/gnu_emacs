@@ -332,9 +332,6 @@ If given, return the value in BUFFER instead."
   (let ((now (float-time)))
     ;; There are two possible timeouts: One for the overall time of
     ;; the entire request...
-    (message "%s %s"
-             (float-time (url-request-last-read-time req))
-             now)
     (when (or (and (url-request-timeout req)
                    (> (- now (float-time (url-request-start-time req)))
                       (url-request-timeout req)))
@@ -346,7 +343,6 @@ If given, return the value in BUFFER instead."
       (with-url--callback (url-request-process req) '(500 "Timer expired")))))
 
 (defun with-url--sentinel (process change)
-  (message "%s" change)
   (let ((req (plist-get (process-plist process) :request)))
     (pcase change
       ("open\n"
