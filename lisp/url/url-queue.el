@@ -125,13 +125,14 @@ The variable `url-queue-timeout' sets a timeout."
   (setq url-queue (delq job url-queue))
   (when (and (url-errorp)
              ;; FIXME: Push the connection failed status to the status
-	     ;;(eq (cadr (cadr status)) 'connection-failed)
-             )
+	     (eq (url-status 'response) 500))
     ;; If we get a connection error, then flush all other jobs from
     ;; the host from the queue.  This particularly makes sense if the
     ;; error really is a DNS resolver issue, which happens
     ;; synchronously and totally halts Emacs.
-    (url-queue-remove-jobs-from-host (url-host (url-generic-parse-url job))))
+    (url-queue-remove-jobs-from-host (url-host
+                                      (url-generic-parse-url
+                                       (url-queue-url job)))))
   (url-queue-run-queue)
   (apply (url-queue-callback job) (url-queue-cbargs job)))
 
