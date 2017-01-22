@@ -40,7 +40,7 @@
   callback redirect-times
   url parsed-url process
   response-size start-time last-read-time timer
-  finished)
+  finished follow-redirects)
 
 (defvar with-url-debug nil
   "If non-nil, record all actions in the \"*url-debug*\" buffer.")
@@ -54,6 +54,7 @@
                         (verbose 5)
                         (cookies t)
                         (cache t)
+                        (follow-redirects t)
                         debug
                         headers
                         ignore-errors
@@ -103,6 +104,10 @@ buffer.  This buffer may grow very large.
 :ignore-errors BOOL
 If non-nil, the body will not be executed if the contents
 specified by the URL could not be fetched.
+
+:follow-redirects BOOL
+If non-nil (which is the default), follow HTTP redirects until
+the final document is reached.
 
 :cookies t/read/write/nil
 If nil, cookies will neither be sent nor stored.  If `read',
@@ -167,6 +172,7 @@ and `base64'."
                               :data-encoding ,data-encoding
                               :start-time (current-time)
                               :last-read-time (current-time)
+                              :follow-redirects ,follow-redirects
                               :redirect-times 0)))
        ,(if wait
             `(progn
@@ -506,9 +512,13 @@ If given, return the value in BUFFER instead."
      ;; Redirects.
      ((<= 300 code 399)
       (cl-incf (url-request-redirect-times req))
-      (if (> (url-request-redirect-times req) 10)
-          (with-url--callback process '(500 "Too many redirections"))
-        (with-url--redirect process (url-header 'location))))
+      (cond
+       ((not (url-request-follow-redirects req))
+        (with-url--callback process '(200 "Redirect not followed")))
+       ((> (url-request-redirect-times req) 10)
+        (with-url--callback process '(500 "Too many redirections")))
+       (t
+        (with-url--redirect process (url-header 'location)))))
      (t
       (with-url--callback process)))))
 
