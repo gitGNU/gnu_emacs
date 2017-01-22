@@ -174,8 +174,9 @@ and `base64'."
                (let ((buffer (process-buffer (url-request-process ,requestv))))
                  (with-current-buffer buffer
                    (unwind-protect
-                       (when (or (not (url-request-ignore-errors ,requestv))
-                                 (url-okp))
+                       (if (and (url-request-ignore-errors ,requestv)
+                                (url-error))
+                           (kill-buffer buffer)
                          (goto-char (point-min))
                          ,@body)
                      (kill-buffer buffer)))))
@@ -283,10 +284,11 @@ If given, return the value in BUFFER instead."
          (push (list 'response
                      500 (format "Error occurred while fetching file: %s" err))
                with-url--status)))
-      (when (or (not (url-request-ignore-errors req))
-                (url-okp))
-        (goto-char (point-min))
-        (when (url-request-callback req)
+      (goto-char (point-min))
+      (when (url-request-callback req)
+        (if (and (url-request-ignore-errors req)
+                 (url-error))
+            (kill-buffer buffer)
           (unwind-protect
               (funcall (url-request-callback req))
             (kill-buffer buffer)))))))
@@ -549,9 +551,12 @@ If given, return the value in BUFFER instead."
           (delete-char -1)))
       (goto-char (point-min))
       (when (url-request-callback req)
-        (unwind-protect
-            (funcall (url-request-callback req))
-          (kill-buffer buffer))))))
+        (if (and (url-request-ignore-errors req)
+                 (url-error))
+            (kill-buffer buffer)
+          (unwind-protect
+              (funcall (url-request-callback req))
+            (kill-buffer buffer)))))))
 
 (defun with-url--decode-chunked ()
   (let (length)
