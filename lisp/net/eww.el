@@ -297,7 +297,7 @@ word(s) will be searched for via `eww-search-prefix'."
     (let ((inhibit-read-only t))
       (insert (format "Loading %s..." url))
       (goto-char (point-min)))
-    (let ((buffer (current-buffer)))
+    (let ((buffer (or buffer (current-buffer))))
       (with-url (url :method method
                      :data data)
         (eww-render point buffer encode)))))
