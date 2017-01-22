@@ -283,7 +283,7 @@ word(s) will be searched for via `eww-search-prefix'."
   (eww-setup-buffer)
   (eww--fetch-url url))
 
-(cl-defun eww--fetch-url (url &key (method "GET") data)
+(cl-defun eww--fetch-url (url &key (method "GET") data point buffer encode)
   ;; Check whether the domain only uses "Highly Restricted" Unicode
   ;; IDNA characters.  If not, transform to punycode to indicate that
   ;; there may be funny business going on.
@@ -300,7 +300,7 @@ word(s) will be searched for via `eww-search-prefix'."
     (let ((buffer (current-buffer)))
       (with-url (url :method method
                      :data data)
-        (eww-render nil buffer)))))
+        (eww-render point buffer encode)))))
 
 ;;;###autoload (defalias 'browse-web 'eww)
 
@@ -883,8 +883,9 @@ network, but just re-display the HTML already fetched."
 	    (error "No current HTML data")
 	  (eww-display-html 'utf-8 url (plist-get eww-data :dom)
 			    (point) (current-buffer)))
-      (with-url (url)
-        (eww-render point buffer encode)))))
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (eww--fetch-url url :point point :buffer buffer :encode encode)))))
 
 ;; Form support.
 
