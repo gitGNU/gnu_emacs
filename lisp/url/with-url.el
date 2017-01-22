@@ -30,6 +30,7 @@
 (require 'gnutls)
 (require 'mm-url)
 (require 'url-http)
+(require 'url-cache)
 
 (cl-defstruct url-request
   original-url wait timeout read-timeout
@@ -40,7 +41,7 @@
   callback redirect-times
   url parsed-url process
   response-size start-time last-read-time timer
-  finished follow-redirects)
+  finished follow-redirects buffer)
 
 (defvar with-url-debug nil
   "If non-nil, record all actions in the \"*url-debug*\" buffer.")
@@ -181,7 +182,7 @@ and `base64'."
                  (with-current-buffer buffer
                    (unwind-protect
                        (if (and (url-request-ignore-errors ,requestv)
-                                (url-error))
+                                (url-errorp))
                            (kill-buffer buffer)
                          (goto-char (point-min))
                          ,@body)
@@ -230,7 +231,10 @@ If given, return the value in BUFFER instead."
   (pcase (url-type (url-request-parsed-url req))
     ((or "http" "https") (with-url--fetch-http req))
     ("ftp" (with-url--fetch-ftp req))
-    ("file" (with-url--fetch-file req))))
+    ("file" (with-url--fetch-file req))
+    ("data" (with-url--fetch-data req))
+    (_ (with-current-buffer (generate-new-buffer "*request*")
+         (with-url--callback nil '(500 "Unsupported URL") req)))))
 
 (defun with-url--fetch-http (req)
   (when (or (url-request-timeout req)
@@ -240,6 +244,7 @@ If given, return the value in BUFFER instead."
                              (with-url--timer req)))))
   (with-current-buffer (generate-new-buffer "*request*")
     (set-buffer-multibyte nil)
+    (setf (url-request-buffer req) (current-buffer))
     (let* ((coding-system-for-read 'binary)
            (coding-system-for-write 'binary)
            (process
@@ -280,9 +285,9 @@ If given, return the value in BUFFER instead."
 (defun with-url--fetch-file (req)
   (with-current-buffer (generate-new-buffer "*request*")
     (set-buffer-multibyte nil)
+    (setf (url-request-buffer req) (current-buffer))
     (let ((coding-system-for-read 'binary)
-          (coding-system-for-write 'binary)
-          (buffer (current-buffer)))
+          (coding-system-for-write 'binary))
       (condition-case err
           (insert-file-contents-literally
            (url-filename (url-request-parsed-url req)))
@@ -290,19 +295,45 @@ If given, return the value in BUFFER instead."
          (push (list 'response
                      500 (format "Error occurred while fetching file: %s" err))
                with-url--status)))
-      (goto-char (point-min))
-      (when (url-request-callback req)
-        (if (and (url-request-ignore-errors req)
-                 (url-error))
-            (kill-buffer buffer)
-          (unwind-protect
-              (funcall (url-request-callback req))
-            (kill-buffer buffer)))))))
+      (with-url--possible-callback req))))
+
+(defun with-url--possible-callback (req)
+  (goto-char (point-min))
+  (let ((buffer (current-buffer)))
+    (when (url-request-callback req)
+      (if (and (url-request-ignore-errors req)
+               (url-errorp))
+          (kill-buffer buffer)
+        (unwind-protect
+            (funcall (url-request-callback req))
+          (kill-buffer buffer))))))
+
+(defun with-url--fetch-data (req)
+  (with-current-buffer (generate-new-buffer "*request*")
+    (set-buffer-multibyte nil)
+    (let ((url (url-request-url req)))
+      (when (string-match "\\`data:\\([^;,]*\\)\\(;\\([^,]+\\)\\)?,\\(.*\\)"
+                          url)
+        (let ((content-type (or (match-string 1 url) "text/plain"))
+              (encoding (or (match-string 3 url) "base64")))
+          (insert (match-string 4 url))
+          (when (equal encoding "base64")
+            (condition-case err
+                (base64-decode-region (point-min) (point-max))
+              (error
+               (setq with-url--status '((response 500 "Invalid data"))))))
+          (unless with-url--status
+            (setq with-url--headers `((content-type . ,content-type))
+                  with-url--status '((response 200 "OK"))))))
+      (with-url--possible-callback req))))
 
 (defun with-url--timer (req)
   (let ((now (float-time)))
     ;; There are two possible timeouts: One for the overall time of
     ;; the entire request...
+    (message "%s %s"
+             (float-time (url-request-last-read-time req))
+             now)
     (when (or (and (url-request-timeout req)
                    (> (- now (float-time (url-request-start-time req)))
                       (url-request-timeout req)))
@@ -498,6 +529,9 @@ If given, return the value in BUFFER instead."
     (cond
      ;; We got the expected response.
      ((<= 200 code 299)
+      (when (and (memq (url-request-cache req) '(t write))
+                 (equal (url-request-method req) "GET"))
+        (with-url--store-in-cache req))
       (with-url--callback process))
      ;; We don't support proxies.
      ((eq status 'use-proxy)
@@ -508,6 +542,7 @@ If given, return the value in BUFFER instead."
      ;; The document is in the cache.
      ((eq status 'not-modified)
       (url-cache-extract (url-cache-create-filename (url-request-url req)))
+      (with-url--parse-headers)
       (with-url--callback process))
      ;; Redirects.
      ((<= 300 code 399)
@@ -522,18 +557,25 @@ If given, return the value in BUFFER instead."
      (t
       (with-url--callback process)))))
 
-(defun with-url--callback (process &optional status)
-  (let ((req (plist-get (process-plist process) :request))
-        (buffer (process-buffer process)))
-    ;; Pass the https certificate on to the caller.
-    (when (gnutls-available-p)
-      (push (cons 'tls-peer (gnutls-peer-status process)) with-url--status))
+(defun with-url--store-in-cache (req)
+  (let ((fname (url-cache-create-filename (url-request-url req))))
+    (when (url-cache-prepare fname)
+      (let ((coding-system-for-write 'binary))
+        (write-region (point-min) (point-max) fname nil 5)))))
+
+(defun with-url--callback (process &optional status req)
+  (let* ((req (or req (plist-get (process-plist process) :request)))
+         (buffer (url-request-buffer req)))
     (setf (url-request-finished req) t)
-    (delete-process process)
+    ;; Pass the https certificate on to the caller.
+    (when process
+      (when (gnutls-available-p)
+        (push (cons 'tls-peer (gnutls-peer-status process)) with-url--status))
+      (delete-process process)
+      (set-process-sentinel process nil)
+      (set-process-filter process nil))
     (when (url-request-timer req)
       (cancel-timer (url-request-timer req)))
-    (set-process-sentinel process nil)
-    (set-process-filter process nil)
     (push (cons 'url (url-request-url req)) with-url--status)
     (with-current-buffer buffer
       ;; Allow overriding the status if we have a timeout or the like.
@@ -559,14 +601,7 @@ If given, return the value in BUFFER instead."
         (while (search-forward "\r\n" nil t)
           (forward-char -1)
           (delete-char -1)))
-      (goto-char (point-min))
-      (when (url-request-callback req)
-        (if (and (url-request-ignore-errors req)
-                 (url-error))
-            (kill-buffer buffer)
-          (unwind-protect
-              (funcall (url-request-callback req))
-            (kill-buffer buffer)))))))
+      (with-url--possible-callback req))))
 
 (defun with-url--decode-chunked ()
   (let (length)
