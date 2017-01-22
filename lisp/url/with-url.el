@@ -370,7 +370,9 @@ If given, return the value in BUFFER instead."
        ;; connection ourselves.
        )
       (_ (with-url--callback
-          process (list 500 (format "Network error: %s" change)) req)))))
+          process (list 500 (format "Network error: %s"
+                                    (replace-regexp-in-string "\n" "" change)))
+          req)))))
 
 (defun with-url--unexpected-early-close ()
   (goto-char (point-min))
