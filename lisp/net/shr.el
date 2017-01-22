@@ -926,20 +926,23 @@ If EXTERNAL, browse the URL using `shr-external-browser'."
 (defun shr-image-fetched (buffer start end &optional flags)
   (when (and (buffer-name buffer)
              (url-okp))
-    (let ((data (shr-parse-image-data)))
+    (let ((data (shr-parse-image-data
+                 (intern (car
+                          (mail-header-parse-content-type
+                           (or (url-header 'content-type) "text/plain")))
+                         obarray))))
       (with-current-buffer buffer
-        (save-excursion
-          (let ((alt (buffer-substring start end))
-                (properties (text-properties-at start))
-                (inhibit-read-only t))
-            (delete-region start end)
-            (goto-char start)
-            (funcall shr-put-image-function data alt flags)
-            (while properties
-              (let ((type (pop properties))
-                    (value (pop properties)))
-                (unless (memq type '(display image-size))
-                  (put-text-property start (point) type value))))))))))
+        (let ((alt (buffer-substring start end))
+              (properties (text-properties-at start))
+              (inhibit-read-only t))
+          (delete-region start end)
+          (goto-char start)
+          (funcall shr-put-image-function data alt flags)
+          (while properties
+            (let ((type (pop properties))
+                  (value (pop properties)))
+              (unless (memq type '(display image-size))
+                (put-text-property start (point) type value)))))))))
 
 (defun shr-image-from-data (data)
   "Return an image from the data: URI content DATA."
@@ -1042,39 +1045,7 @@ WIDTH and HEIGHT are the sizes given in the HTML data, if any."
          :max-height max-height
          :format content-type)))))
 
-;; url-cache-extract autoloads url-cache.
-(declare-function url-cache-create-filename "url-cache" (url))
-(autoload 'mm-disable-multibyte "mm-util")
 (autoload 'browse-url-mail "browse-url")
-
-(defun shr-get-image-data (url)
-  "Get image data for URL.
-Return a string with image data."
-  (with-temp-buffer
-    (mm-disable-multibyte)
-    (when (ignore-errors
-	    (url-cache-extract (url-cache-create-filename (shr-encode-url url)))
-	    t)
-      ;;; !!! This is all just an ugly kludge until a new URL caching method
-      ;;; been established.
-      (goto-char (point-min))
-      (when (re-search-forward "\r?\n\r?\n" nil t)
-        (let ((content-type
-               (save-excursion
-                 (save-restriction
-                   (narrow-to-region (point-min) (point))
-                   (goto-char (point-min))
-                   (while (search-forward "\r\n" nil t)
-                     (replace-match "\n"))
-                   (let ((content-type (mail-fetch-field "content-type")))
-                     (and content-type
-                          ;; Remove any comments in the type string.
-                          (intern (replace-regexp-in-string ";.*" "" content-type)
-                                  obarray)))))))
-          (goto-char (point-min))
-          (when (re-search-forward "\r?\n\r?\n" nil t)
-            (delete-region (point) (point-min))
-            (shr-parse-image-data content-type)))))))
 
 (declare-function libxml-parse-xml-region "xml.c"
 		  (start end &optional base-url discard-comments))
@@ -1499,20 +1470,20 @@ The preference is a float determined from `shr-prefer-media-type'."
 	  (setq shr-start (point))
           (shr-insert alt))
 	 ((and (not shr-ignore-cache)
-	       (url-is-cached (shr-encode-url url)))
-	  (funcall shr-put-image-function (shr-get-image-data url) alt
-                   (list :width width :height height)))
-	 (t
-	  (when (and shr-ignore-cache
-		     (url-is-cached (shr-encode-url url)))
-	    (let ((file (url-cache-create-filename (shr-encode-url url))))
-	      (when (file-exists-p file)
-		(delete-file file))))
+	       (with-url-cached-p (shr-encode-url url)))
+          (let ((buffer (current-buffer))
+                end)
+            (insert "-")
+            (setq end (set-marker (make-marker) (point)))
+            (with-url ((shr-encode-url url) :cache t)
+              (shr-image-fetched buffer start end
+                                 (list :width width :height height)))))
+         (t
           (when (image-type-available-p 'svg)
             (insert-image
              (shr-make-placeholder-image dom)
              (or alt "")))
-          (insert " ")
+          (insert "-")
 	  (url-queue-retrieve
 	   (shr-encode-url url) 'shr-image-fetched
 	   (list (current-buffer) start (set-marker (make-marker) (point))
