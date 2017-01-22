@@ -30,7 +30,6 @@
 (require 'gnutls)
 (require 'mm-url)
 (require 'url-http)
-(require 'url-cache)
 
 (cl-defstruct url-request
   original-url wait timeout read-timeout
@@ -416,8 +415,7 @@ If given, return the value in BUFFER instead."
                (list "Host" (puny-encode-string (url-host parsed)))
                (list "If-Modified-Since"
                      (and (memq (url-request-cache req) '(t write))
-                          (when-let ((tm (url-is-cached (url-request-url req))))
-                            (url-get-normalized-date tm)))))))
+                          (with-url-cache-time (url-request-url req)))))))
         (cl-loop for (name value) in headers
                  when (and (not (cl-assoc name (url-request-headers req)
                                           :test #'cl-equalp))
@@ -535,9 +533,6 @@ If given, return the value in BUFFER instead."
     (cond
      ;; We got the expected response.
      ((<= 200 code 299)
-      (when (and (memq (url-request-cache req) '(t write))
-                 (equal (url-request-method req) "GET"))
-        (with-url--store-in-cache req))
       (with-url--callback process))
      ;; We don't support proxies.
      ((eq status 'use-proxy)
@@ -547,7 +542,7 @@ If given, return the value in BUFFER instead."
                       (url-header 'location)))))
      ;; The document is in the cache.
      ((eq status 'not-modified)
-      (url-cache-extract (url-cache-create-filename (url-request-url req)))
+      (with-url-get-cache (url-request-url req))
       (with-url--parse-headers)
       (with-url--callback process))
      ;; Redirects.
@@ -562,12 +557,6 @@ If given, return the value in BUFFER instead."
         (with-url--redirect process (url-header 'location)))))
      (t
       (with-url--callback process)))))
-
-(defun with-url--store-in-cache (req)
-  (let ((fname (url-cache-create-filename (url-request-url req))))
-    (when (url-cache-prepare fname)
-      (let ((coding-system-for-write 'binary))
-        (write-region (point-min) (point-max) fname nil 5)))))
 
 (defun with-url--callback (process &optional status req)
   (let ((req (or req (plist-get (process-plist process) :request))))
@@ -606,6 +595,10 @@ If given, return the value in BUFFER instead."
         (while (search-forward "\r\n" nil t)
           (forward-char -1)
           (delete-char -1)))
+      (when (and (memq (url-request-cache req) '(t write))
+                 (equal (url-request-method req) "GET")
+                 (url-okp))
+        (with-url-put-cache (url-request-url req)))
       (with-url--possible-callback req))))
 
 (defun with-url--decode-chunked ()
@@ -683,6 +676,89 @@ If given, return the value in BUFFER instead."
       (with-url--fetch req)
     (while (not (url-request-finished req))
       (sleep-for 0.1))))
+
+(defun with-url-put-cache (url)
+  "Put the current buffer into a cache designated by URL.
+If the headers don't allow caching, nothing will be done."
+  ;; We store things in the cache if they have a Last-Modified header
+  ;; and they either don't have an Expires header, or it's in the
+  ;; future.
+  (let ((expires nil))
+    (current-buffer)
+    (when (and (url-header 'last-modified)
+               (or (not (url-header 'expires))
+                   (progn
+                     (setq expires
+                           (ignore-errors
+                             (apply #'encode-time
+                                    (parse-time-string (url-header 'expires)))))
+                     (or (not expires)
+                         (time-less-p (current-time) expires)))))
+      (let ((contents (buffer-string))
+            (buffer (current-buffer)))
+        (with-temp-buffer
+          (set-buffer-multibyte nil)
+          (insert "Content-Type: " (or (url-header 'content-type buffer)
+                                       "text/plain")
+                  "\n")
+          (insert "Last-Modified: " (url-header 'last-modified buffer) "\n")
+          ;; If there's no Expires header, we cache for one day.
+          (insert "Expires: "
+                  (let ((system-time-locale "C"))
+                    (format-time-string "%a, %d %b %Y %T %z"
+                                        (or expires
+                                            (time-add (current-time)
+                                                      (list 0 (* 60 60 24))))))
+                  "\n")
+          (insert "\n")
+          (insert contents)
+          (let ((file (with-url--cache-file-name url)))
+            (unless (file-exists-p (file-name-directory file))
+              (make-directory (file-name-directory file) t))
+            (write-region (point-min) (point-max) file nil 'silent)))))))
+
+(defun with-url-cache-time (url)
+  "Return the Last-Modified timestamp for the cached version of URL, if any."
+  (let ((file (with-url--cache-file-name url)))
+    (when (file-exists-p file)
+      (with-temp-buffer
+        (set-buffer-multibyte nil)
+        (insert-file-contents-literally file)
+        (narrow-to-region (point) (or (search-forward "\n\n" nil t) (point)))
+        (mail-fetch-field "last-modified")))))
+
+(defun with-url-get-cache (url)
+  (let ((file (with-url--cache-file-name url)))
+    (when (file-exists-p file)
+      (set-buffer-multibyte nil)
+      (insert-file-contents-literally file)
+      (let ((expires
+             (progn
+               (narrow-to-region
+                (point) (or (search-forward "\n\n" nil t) (point)))
+               (ignore-errors
+                 (apply #'encode-time
+                        (parse-time-string
+                         (mail-fetch-field "expires")))))))
+        (if (and (null expires)
+                 (time-less-p (current-time) expires))
+            t
+          (erase-buffer)
+          nil)))))
+
+(defun with-url--cache-file-name (url)
+  "Return a file name appropriate to store URL.
+It's based in `user-emacs-directory' and is hash-based, and is
+several directories deep to avoid creating extremely large single
+directories."
+  (with-temp-buffer
+    (insert (sha1 url))
+    (goto-char (point-min))
+    (insert (expand-file-name "url" user-emacs-directory) "/cached/")
+    (cl-loop repeat 3
+             do (forward-char 10)
+             (insert "/"))
+    (buffer-string)))
 
 (provide 'with-url)
 
