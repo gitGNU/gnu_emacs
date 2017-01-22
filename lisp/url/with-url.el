@@ -345,11 +345,12 @@ If given, return the value in BUFFER instead."
       (with-url--callback (url-request-process req) '(500 "Timer expired")))))
 
 (defun with-url--sentinel (process change)
-  (pcase change
-    ("open\n"
-     (with-url--send-request process))
-    ((or "deleted\n" "connection broken by remote peer\n")
-     (let ((req (plist-get (process-plist process) :request)))
+  (message "%s" change)
+  (let ((req (plist-get (process-plist process) :request)))
+    (pcase change
+      ("open\n"
+       (with-url--send-request process))
+      ("connection broken by remote peer\n"
        ;; We'll be in this situation if the peer closes the
        ;; connection.  If we ourselves have killed the connection,
        ;; then `url-request-finished' will be set.
@@ -363,7 +364,13 @@ If given, return the value in BUFFER instead."
              ;; Nope, it's an error.
              (with-url--callback
               process (list 500 (format "Peer closed connection: %s"
-                                        (process-status process)))))))))))
+                                        (process-status process))))))))
+      ("deleted\n"
+       ;; We ignore these, as that's what happens when we end the
+       ;; connection ourselves.
+       )
+      (_ (with-url--callback
+          process (list 500 (format "Network error: %s" change)) req)))))
 
 (defun with-url--unexpected-early-close ()
   (goto-char (point-min))
@@ -564,20 +571,19 @@ If given, return the value in BUFFER instead."
         (write-region (point-min) (point-max) fname nil 5)))))
 
 (defun with-url--callback (process &optional status req)
-  (let* ((req (or req (plist-get (process-plist process) :request)))
-         (buffer (url-request-buffer req)))
-    (setf (url-request-finished req) t)
-    ;; Pass the https certificate on to the caller.
-    (when process
-      (when (gnutls-available-p)
-        (push (cons 'tls-peer (gnutls-peer-status process)) with-url--status))
-      (delete-process process)
-      (set-process-sentinel process nil)
-      (set-process-filter process nil))
-    (when (url-request-timer req)
-      (cancel-timer (url-request-timer req)))
-    (push (cons 'url (url-request-url req)) with-url--status)
-    (with-current-buffer buffer
+  (let ((req (or req (plist-get (process-plist process) :request))))
+    (with-current-buffer (url-request-buffer req)
+      (setf (url-request-finished req) t)
+      ;; Pass the https certificate on to the caller.
+      (when process
+        (when (gnutls-available-p)
+          (push (cons 'tls-peer (gnutls-peer-status process)) with-url--status))
+        (delete-process process)
+        (set-process-sentinel process nil)
+        (set-process-filter process nil))
+      (when (url-request-timer req)
+        (cancel-timer (url-request-timer req)))
+      (push (cons 'url (url-request-url req)) with-url--status)
       ;; Allow overriding the status if we have a timeout or the like.
       (when status
         (push (cons 'response status) with-url--status))
