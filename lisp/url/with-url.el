@@ -238,36 +238,48 @@ If given, return the value in BUFFER instead."
 
 (defun with-url--fetch-http (req)
   (when (or (url-request-timeout req)
-            (url-request-read-timeout req))
-    (setf (url-request-timer req)
-          (run-at-time 1 1 (lambda ()
-                             (with-url--timer req)))))
+            (url-request-read-timeout req)))
   (with-current-buffer (generate-new-buffer "*request*")
     (set-buffer-multibyte nil)
     (setf (url-request-buffer req) (current-buffer))
-    (let* ((coding-system-for-read 'binary)
-           (coding-system-for-write 'binary)
-           (process
-            (make-network-process
-             :name (url-request-url req)
-             :buffer (current-buffer)
-             :host (url-host (url-request-parsed-url req))
-             :service (or (url-portspec (url-request-parsed-url req))
-                          (if (equal (url-type (url-request-parsed-url req))
-                                     "https")
-                              443
-                            80))
-             :nowait t
-             :plist (list :request req)
-             :tls-parameters
-             (and (equal (url-type (url-request-parsed-url req)) "https")
-                  (cons 'gnutls-x509pki
-                        (gnutls-boot-parameters
-                         :hostname (puny-encode-string
-                                    (url-host (url-request-parsed-url req))))))
-             :sentinel #'with-url--sentinel
-             :filter #'with-url--filter)))
-      (setf (url-request-process req) process))))
+    (if (and (memq (url-request-cache req) '(t read))
+             (with-url-get-cache (url-request-url req)))
+        ;; If we have the document in the cache, then just serve it out.
+        (progn
+          (goto-char (point-min))
+          (insert "HTTP/1.1 200 Retrieved from cache\n")
+          (with-url--parse-headers)
+          (goto-char (point-min))
+          (delete-region (point) (search-forward "\n\n"))
+          (with-url--possible-callback req))
+      ;; If not, fetch it from the web.
+      (let* ((coding-system-for-read 'binary)
+             (coding-system-for-write 'binary)
+             (process
+              (make-network-process
+               :name (url-request-url req)
+               :buffer (current-buffer)
+               :host (url-host (url-request-parsed-url req))
+               :service (or (url-portspec (url-request-parsed-url req))
+                            (if (equal (url-type (url-request-parsed-url req))
+                                       "https")
+                                443
+                              80))
+               :nowait t
+               :plist (list :request req)
+               :tls-parameters
+               (and (equal (url-type (url-request-parsed-url req)) "https")
+                    (cons 'gnutls-x509pki
+                          (gnutls-boot-parameters
+                           :hostname (puny-encode-string
+                                      (url-host
+                                       (url-request-parsed-url req))))))
+               :sentinel #'with-url--sentinel
+               :filter #'with-url--filter)))
+        (setf (url-request-timer req)
+              (run-at-time 1 1 (lambda ()
+                                 (with-url--timer req))))
+        (setf (url-request-process req) process)))))
 
 (defun with-url--fetch-ftp (req)
   (let ((parsed (url-request-parsed-url req)))
@@ -680,6 +692,8 @@ If given, return the value in BUFFER instead."
 (defun with-url-put-cache (url)
   "Put the current buffer into a cache designated by URL.
 If the headers don't allow caching, nothing will be done."
+  ;; Use this opportunity to possibly prune the cache.
+  (with-url--possibly-prune-cache)
   ;; We store things in the cache if they have a Last-Modified header
   ;; and they either don't have an Expires header, or it's in the
   ;; future.
@@ -732,19 +746,58 @@ If the headers don't allow caching, nothing will be done."
     (when (file-exists-p file)
       (set-buffer-multibyte nil)
       (insert-file-contents-literally file)
-      (let ((expires
-             (progn
-               (narrow-to-region
-                (point) (or (search-forward "\n\n" nil t) (point)))
-               (ignore-errors
-                 (apply #'encode-time
-                        (parse-time-string
-                         (mail-fetch-field "expires")))))))
-        (if (and (null expires)
-                 (time-less-p (current-time) expires))
-            t
-          (erase-buffer)
-          nil)))))
+      (if (not (with-url--cached-expired-p))
+          t
+        (erase-buffer)
+        (with-url--delete-file file)
+        nil))))
+
+(defun with-url--cached-expired-p ()
+  (let ((expires
+         (save-restriction
+           (narrow-to-region
+            (point) (or (search-forward "\n\n" nil t) (point)))
+           (ignore-errors
+             (apply #'encode-time
+                    (parse-time-string
+                     (mail-fetch-field "expires")))))))
+    (or (null expires)
+        (time-less-p expires (current-time)))))
+
+(defun with-url--delete-file (file)
+  (when (ignore-errors
+          (delete-file file)
+          t)
+    ;; Check upwards and delete empty directories.
+    (cl-loop repeat 3
+             do (progn
+                  (setq file (directory-file-name (file-name-directory file)))
+                  (when (zerop (length (delete
+                                        "." (delete ".." (directory-files
+                                                          file nil nil t)))))
+                    (ignore-errors
+                      (delete-directory file)))))))
+
+(defvar with-url--last-prune-time nil)
+
+(defun with-url--possibly-prune-cache ()
+  "Prune the cache maximum once per hour."
+  (when (or (not with-url--last-prune-time)
+            (> with-url--last-prune-time (- (float-time) (* 60 60))))
+    (setq with-url--last-prune-time (float-time))
+    (with-url--prune-cache)))
+
+(defun with-url--prune-cache ()
+  (dolist (file (directory-files-recursively
+                 (expand-file-name "url/cached" user-emacs-directory)
+                 "\\'[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9]\\'"))
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (when (and (ignore-errors
+                   (insert-file-contents-literally file)
+                   t)
+                 (with-url--cached-expired-p))
+        (with-url--delete-file file)))))
 
 (defun with-url--cache-file-name (url)
   "Return a file name appropriate to store URL.
