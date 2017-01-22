@@ -1058,8 +1058,7 @@ Return a string with image data."
       ;;; !!! This is all just an ugly kludge until a new URL caching method
       ;;; been established.
       (goto-char (point-min))
-      (when (or (search-forward "\n\n" nil t)
-		(search-forward "\r\n\r\n" nil t))
+      (when (re-search-forward "\r?\n\r?\n" nil t)
         (let ((content-type
                (save-excursion
                  (save-restriction
@@ -1073,8 +1072,7 @@ Return a string with image data."
                           (intern (replace-regexp-in-string ";.*" "" content-type)
                                   obarray)))))))
           (goto-char (point-min))
-          (when (or (search-forward "\n\n" nil t)
-                    (search-forward "\r\n\r\n" nil t))
+          (when (re-search-forward "\r?\n\r?\n" nil t)
             (delete-region (point) (point-min))
             (shr-parse-image-data content-type)))))))
 
