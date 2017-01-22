@@ -319,14 +319,14 @@ If given, return the value in BUFFER instead."
          ;; nor any chunked encoding, then we may have gotten the
          ;; complete document anyway.
          (with-current-buffer (process-buffer process)
-           (if (with-url--unexpected-early-close process)
+           (if (with-url--unexpected-early-close)
                (with-url--process-reply process)
              ;; Nope, it's an error.
              (with-url--callback
               process (list 500 (format "Peer closed connection: %s"
                                         (process-status process)))))))))))
 
-(defun with-url--unexpected-early-close (process)
+(defun with-url--unexpected-early-close ()
   (goto-char (point-min))
   (when-let ((header-end (re-search-forward "\r?\n\r?\n" nil t)))
     (goto-char (point-min))
