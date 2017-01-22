@@ -147,7 +147,7 @@ The variable `url-queue-timeout' sets a timeout."
              :verbose (if (url-queue-silentp job)
                           0 5)
              :cookies (not (url-queue-inhibit-cookiesp job))
-             :timeout url-queue-timeout)
+             :read-timeout url-queue-timeout)
     (url-queue-callback-function job)))
 
 (provide 'url-queue)
