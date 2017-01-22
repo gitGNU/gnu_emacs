@@ -625,8 +625,10 @@ If given, return the value in BUFFER instead."
       (delete-region (match-beginning 0) (point))
       (if (zerop length)
           (delete-region (match-beginning 0) (point-max))
-        ;; Skip ahead, and then past the CRLF.
-        (goto-char (+ (point) length 2))))))
+        ;; Skip ahead.
+        (goto-char (+ (point) length))
+        ;; Delete the CRLF.
+        (delete-char 2)))))
 
 (defun with-url--redirect (process location)
   (let ((req (plist-get (process-plist process) :request)))
