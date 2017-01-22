@@ -234,6 +234,7 @@ If given, return the value in BUFFER instead."
     ("file" (with-url--fetch-file req))
     ("data" (with-url--fetch-data req))
     (_ (with-current-buffer (generate-new-buffer "*request*")
+         (setf (url-request-buffer req) (current-buffer))
          (with-url--callback nil '(500 "Unsupported URL") req)))))
 
 (defun with-url--fetch-http (req)
