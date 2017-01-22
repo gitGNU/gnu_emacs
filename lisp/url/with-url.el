@@ -318,7 +318,7 @@ If given, return the value in BUFFER instead."
               (encoding (or (match-string 3 url) "base64")))
           (insert (match-string 4 url))
           (when (equal encoding "base64")
-            (condition-case err
+            (condition-case nil
                 (base64-decode-region (point-min) (point-max))
               (error
                (setq with-url--status '((response 500 "Invalid data"))))))
