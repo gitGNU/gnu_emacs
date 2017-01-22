@@ -39,9 +39,9 @@
   :type 'integer
   :group 'url)
 
-(defcustom url-queue-timeout 5
+(defcustom url-queue-timeout 10
   "How long to let a job live once it's started (in seconds)."
-  :version "24.1"
+  :version "26.1"
   :type 'integer
   :group 'url)
 
