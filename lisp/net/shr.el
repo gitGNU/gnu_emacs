@@ -39,6 +39,7 @@
 (require 'svg)
 (require 'image)
 (require 'with-url)
+(require 'mail-parse)
 
 (defgroup shr nil
   "Simple HTML Renderer"
@@ -932,17 +933,18 @@ If EXTERNAL, browse the URL using `shr-external-browser'."
                            (or (url-header 'content-type) "text/plain")))
                          obarray))))
       (with-current-buffer buffer
-        (let ((alt (buffer-substring start end))
-              (properties (text-properties-at start))
-              (inhibit-read-only t))
-          (delete-region start end)
-          (goto-char start)
-          (funcall shr-put-image-function data alt flags)
-          (while properties
-            (let ((type (pop properties))
-                  (value (pop properties)))
-              (unless (memq type '(display image-size))
-                (put-text-property start (point) type value)))))))))
+        (save-excursion
+          (let ((alt (buffer-substring start end))
+                (properties (text-properties-at start))
+                (inhibit-read-only t))
+            (delete-region start end)
+            (goto-char start)
+            (funcall shr-put-image-function data alt flags)
+            (while properties
+              (let ((type (pop properties))
+                    (value (pop properties)))
+                (unless (memq type '(display image-size))
+                  (put-text-property start (point) type value))))))))))
 
 (defun shr-image-from-data (data)
   "Return an image from the data: URI content DATA."
