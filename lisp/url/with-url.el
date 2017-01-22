@@ -171,13 +171,14 @@ and `base64'."
        ,(if wait
             `(progn
                (with-url--wait ,requestv)
-               (let ((buffer (current-buffer)))
-                 (unwind-protect
-                     (when (or (not (url-request-ignore-errors req))
-                               (url-okp))
-                       (goto-char (point-min))
-                       ,@body)
-                   (kill-buffer buffer))))
+               (let ((buffer (process-buffer (url-request-process ,requestv))))
+                 (with-current-buffer buffer
+                   (unwind-protect
+                       (when (or (not (url-request-ignore-errors ,requestv))
+                                 (url-okp))
+                         (goto-char (point-min))
+                         ,@body)
+                     (kill-buffer buffer)))))
           `(progn
              (setf (url-request-callback ,requestv)
                    (lambda ()
@@ -285,9 +286,10 @@ If given, return the value in BUFFER instead."
       (when (or (not (url-request-ignore-errors req))
                 (url-okp))
         (goto-char (point-min))
-        (unwind-protect
-            (funcall (url-request-callback req))
-          (kill-buffer buffer))))))
+        (when (url-request-callback req)
+          (unwind-protect
+              (funcall (url-request-callback req))
+            (kill-buffer buffer)))))))
 
 (defun with-url--timer (req)
   (let ((now (float-time)))
@@ -509,7 +511,6 @@ If given, return the value in BUFFER instead."
       (with-url--callback process)))))
 
 (defun with-url--callback (process &optional status)
-  (message "Calling back")
   (let ((req (plist-get (process-plist process) :request))
         (buffer (process-buffer process)))
     ;; Pass the https certificate on to the caller.
@@ -547,9 +548,10 @@ If given, return the value in BUFFER instead."
           (forward-char -1)
           (delete-char -1)))
       (goto-char (point-min))
-      (unwind-protect
-          (funcall (url-request-callback req))
-        (kill-buffer buffer)))))
+      (when (url-request-callback req)
+        (unwind-protect
+            (funcall (url-request-callback req))
+          (kill-buffer buffer))))))
 
 (defun with-url--decode-chunked ()
   (let (length)
@@ -622,9 +624,10 @@ If given, return the value in BUFFER instead."
     with-url--headers))
 
 (defun with-url--wait (req)
-  (with-url--fetch req)
-  (while (not (url-request-finished req))
-    (sleep-for 0.1)))
+  (prog1
+      (with-url--fetch req)
+    (while (not (url-request-finished req))
+      (sleep-for 0.1))))
 
 (provide 'with-url)
 
