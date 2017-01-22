@@ -701,7 +701,10 @@ If the headers don't allow caching, nothing will be done."
   ;; future.
   (let ((expires nil))
     (current-buffer)
-    (when (and (url-header 'last-modified)
+    (when (and (or (url-header 'last-modified)
+                   (and (url-header 'cache-control)
+                        (setq expires (with-url--parse-cache-control
+                                       (url-header 'cache-control)))))
                (or (not (url-header 'expires))
                    (progn
                      (setq expires
@@ -717,7 +720,8 @@ If the headers don't allow caching, nothing will be done."
           (insert "Content-Type: " (or (url-header 'content-type buffer)
                                        "text/plain")
                   "\n")
-          (insert "Last-Modified: " (url-header 'last-modified buffer) "\n")
+          (when (url-header 'last-modified buffer)
+            (insert "Last-Modified: " (url-header 'last-modified buffer) "\n"))
           ;; If there's no Expires header, we cache for one day.
           (insert "Expires: "
                   (let ((system-time-locale "C"))
@@ -732,6 +736,12 @@ If the headers don't allow caching, nothing will be done."
             (unless (file-exists-p (file-name-directory file))
               (make-directory (file-name-directory file) t))
             (write-region (point-min) (point-max) file nil 'silent)))))))
+
+(defun with-url--parse-cache-control (control)
+  ;; Cache-Control: public, max-age=604800
+  (when (string-match "max-age *= *\\([0-9]+\\)" control)
+    (time-add (current-time) (seconds-to-time
+                              (string-to-number (match-string 1 control))))))
 
 (defun with-url-cache-time (url)
   "Return the Last-Modified timestamp for the cached version of URL, if any."
