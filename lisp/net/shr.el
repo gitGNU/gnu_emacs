@@ -1055,24 +1055,34 @@ Return a string with image data."
     (when (ignore-errors
 	    (url-cache-extract (url-cache-create-filename (shr-encode-url url)))
 	    t)
+      ;;; !!! This is all just an ugly kludge until a new URL caching method
+      ;;; been established.
+      (goto-char (point-min))
       (when (or (search-forward "\n\n" nil t)
 		(search-forward "\r\n\r\n" nil t))
-	(shr-parse-image-data)))))
+        (let ((content-type
+               (save-excursion
+                 (save-restriction
+                   (narrow-to-region (point-min) (point))
+                   (goto-char (point-min))
+                   (while (search-forward "\r\n" nil t)
+                     (replace-match "\n"))
+                   (let ((content-type (mail-fetch-field "content-type")))
+                     (and content-type
+                          ;; Remove any comments in the type string.
+                          (intern (replace-regexp-in-string ";.*" "" content-type)
+                                  obarray)))))))
+          (goto-char (point-min))
+          (when (or (search-forward "\n\n" nil t)
+                    (search-forward "\r\n\r\n" nil t))
+            (delete-region (point) (point-min))
+            (shr-parse-image-data content-type)))))))
 
 (declare-function libxml-parse-xml-region "xml.c"
 		  (start end &optional base-url discard-comments))
 
-(defun shr-parse-image-data ()
-  (let ((data (buffer-substring (point) (point-max)))
-	(content-type
-	 (save-excursion
-	   (save-restriction
-	     (narrow-to-region (point-min) (point))
-	     (let ((content-type (mail-fetch-field "content-type")))
-	       (and content-type
-		    ;; Remove any comments in the type string.
-		    (intern (replace-regexp-in-string ";.*" "" content-type)
-			    obarray)))))))
+(defun shr-parse-image-data (&optional content-type)
+  (let ((data (buffer-substring (point) (point-max))))
     ;; SVG images may contain references to further images that we may
     ;; want to block.  So special-case these by parsing the XML data
     ;; and remove the blocked bits.
