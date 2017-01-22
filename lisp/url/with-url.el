@@ -155,7 +155,8 @@ When using the posting methods, the data is usually encoded in
 some fashion.  Supported encodings are `url-form', `multipart'
 and `base64'."
   (declare (indent 1))
-  (let ((requestv (cl-gensym "request")))
+  (let ((requestv (cl-gensym "request"))
+        (buffer (cl-gensym "buffer")))
     `(let ((,requestv 
             (make-url-request :original-url ,url
                               :timeout ,timeout
@@ -177,15 +178,15 @@ and `base64'."
        ,(if wait
             `(progn
                (with-url--wait ,requestv)
-               (let ((buffer (process-buffer (url-request-process ,requestv))))
-                 (with-current-buffer buffer
+               (let ((,buffer (url-request-buffer ,requestv)))
+                 (with-current-buffer ,buffer
                    (unwind-protect
                        (if (and (url-request-ignore-errors ,requestv)
                                 (url-errorp))
                            (kill-buffer buffer)
                          (goto-char (point-min))
                          ,@body)
-                     (kill-buffer buffer)))))
+                     (kill-buffer ,buffer)))))
           `(progn
              (setf (url-request-callback ,requestv)
                    (lambda ()
@@ -251,6 +252,7 @@ If given, return the value in BUFFER instead."
           (with-url--parse-headers)
           (goto-char (point-min))
           (delete-region (point) (search-forward "\n\n"))
+          (setf (url-request-finished req) t)
           (with-url--possible-callback req))
       ;; If not, fetch it from the web.
       (let* ((coding-system-for-read 'binary)
@@ -740,6 +742,9 @@ If the headers don't allow caching, nothing will be done."
         (insert-file-contents-literally file)
         (narrow-to-region (point) (or (search-forward "\n\n" nil t) (point)))
         (mail-fetch-field "last-modified")))))
+
+(defun with-url-cached-p (url)
+  (file-exists-p (with-url--cache-file-name url)))
 
 (defun with-url-get-cache (url)
   (let ((file (with-url--cache-file-name url)))
