@@ -30,6 +30,7 @@
 (require 'gnutls)
 (require 'mm-url)
 (require 'url-http)
+(require 'mail-parse)
 
 (cl-defstruct url-request
   original-url wait timeout read-timeout
