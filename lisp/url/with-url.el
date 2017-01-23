@@ -835,7 +835,8 @@ If the headers don't allow caching, nothing will be done."
     (dolist (file (directory-files-recursively
                    (expand-file-name "url/cached" user-emacs-directory)
                    "\\`[a-z0-9]+\\'"))
-      (when (time-less-p (file-attribute-modification-time file) cutoff)
+      (when (time-less-p
+             (file-attribute-modification-time (file-attributes file)) cutoff)
         (ignore-errors
           (delete-file file))))))
 
