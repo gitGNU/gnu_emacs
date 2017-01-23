@@ -826,14 +826,16 @@ If the headers don't allow caching, nothing will be done."
     (with-url--prune-cache)))
 
 (defun with-url--prune-cache ()
-  (dolist (file (directory-files-recursively
-                 (expand-file-name "url/cached" user-emacs-directory)
-                 "\\`[a-z0-9]+\\'"))
-    (with-temp-buffer
-      (when (and (ignore-errors
-                   (insert-file-contents-literally file)
-                   t)
-                 (with-url--cached-expired-p))
+  ;; We delete files that are older than a day.  It would perhaps be
+  ;; nicer to actually look at expiration dates and stuff, but doing
+  ;; so would be rather slow.  In any case, best current practice for
+  ;; files without explicit Expires (etc) headers is to just store
+  ;; them for a day, so it's OK.
+  (let ((cutoff (time-subtract (current-time) (seconds-to-time (* 60 60 24)))))
+    (dolist (file (directory-files-recursively
+                   (expand-file-name "url/cached" user-emacs-directory)
+                   "\\`[a-z0-9]+\\'"))
+      (when (time-less-p (file-attribute-modification-time file) cutoff)
         (ignore-errors
           (delete-file file))))))
 
