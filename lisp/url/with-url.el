@@ -59,7 +59,7 @@
                         debug
                         headers
                         ignore-errors
-                        (method "GET")
+                        (method 'get)
                         data
                         (data-charset 'utf-8)
                         data-encoding)
@@ -130,9 +130,9 @@ Additional elements in this alist are interpreted as the coding
 system (defaulting to `utf-8') and the encoding
 method (defaulting to `url-encode').
 
-:method GET/POST/etc
+:method SYMBOL
 The method to use for retrieving an HTTP(S) resource.  This defaults
-to GET, and other popular values are POST, UPDATE and PUT.
+to `get', and other popular values are `post', `update' and `put'.
 
 :data STRING/ALIST
 Data to include in the body of the HTTP(S) request when using
@@ -167,7 +167,7 @@ and `base64'."
                               :cookies ,cookies
                               :cache ,cache
                               :headers ',headers
-                              :method ,method
+                              :method ',method
                               :ignore-errors ,ignore-errors
                               :data ,data
                               :data-charset ',data-charset
@@ -401,11 +401,11 @@ If given, return the value in BUFFER instead."
     (let* ((req (plist-get (process-plist process) :request))
            (parsed (url-request-parsed-url req)))
       (insert (format "%s %s%s HTTP/1.1\r\n"
-                      (url-request-method req)
+                      (upcase (symbol-name (url-request-method req)))
                       (if (zerop (length (url-filename parsed)))
                           "/"
                         (url-filename parsed))
-                      (if (and (equal (url-request-method req) "GET")
+                      (if (and (eq (url-request-method req) 'get)
                                (url-request-data req))
                           (concat "?" (cl-caddr
                                        (with-url--data req 'url-encode)))
@@ -643,7 +643,7 @@ If given, return the value in BUFFER instead."
           (forward-char -1)
           (delete-char -1)))
       (when (and (memq (url-request-cache req) '(t write))
-                 (equal (url-request-method req) "GET")
+                 (eq (url-request-method req) 'get)
                  (url-okp))
         (with-url-put-cache (url-request-url req)))
       (with-url--possible-callback req))))
@@ -799,7 +799,8 @@ If the headers don't allow caching, nothing will be done."
       (if (not (with-url--cached-expired-p))
           t
         (erase-buffer)
-        (with-url--delete-file file)
+        (ignore-errors
+          (delete-file file))
         nil))))
 
 (defun with-url--cached-expired-p ()
@@ -814,20 +815,6 @@ If the headers don't allow caching, nothing will be done."
     (or (null expires)
         (time-less-p expires (current-time)))))
 
-(defun with-url--delete-file (file)
-  (when (ignore-errors
-          (delete-file file)
-          t)
-    ;; Check upwards and delete empty directories.
-    (cl-loop repeat 3
-             do (progn
-                  (setq file (directory-file-name (file-name-directory file)))
-                  (when (zerop (length (delete
-                                        "." (delete ".." (directory-files
-                                                          file nil nil t)))))
-                    (ignore-errors
-                      (delete-directory file)))))))
-
 (defvar with-url--last-prune-time nil)
 
 (defun with-url--possibly-prune-cache ()
@@ -840,14 +827,14 @@ If the headers don't allow caching, nothing will be done."
 (defun with-url--prune-cache ()
   (dolist (file (directory-files-recursively
                  (expand-file-name "url/cached" user-emacs-directory)
-                 "\\'[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9]\\'"))
+                 "\\'[a-z0-9]+\\'"))
     (with-temp-buffer
-      (set-buffer-multibyte nil)
       (when (and (ignore-errors
                    (insert-file-contents-literally file)
                    t)
                  (with-url--cached-expired-p))
-        (with-url--delete-file file)))))
+        (ignore-errors
+          (delete-file file))))))
 
 (defun with-url--cache-file-name (url)
   "Return a file name appropriate to store URL.
@@ -858,9 +845,10 @@ directories."
     (insert (sha1 url))
     (goto-char (point-min))
     (insert (expand-file-name "url" user-emacs-directory) "/cached/")
-    (cl-loop repeat 3
-             do (forward-char 10)
-             (insert "/"))
+    ;; We have a two-level directory structure with at most 256
+    ;; top-level directories.
+    (forward-char 2)
+    (insert "/")
     (buffer-string)))
 
 (provide 'with-url)
