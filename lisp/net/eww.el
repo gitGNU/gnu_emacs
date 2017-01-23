@@ -283,7 +283,8 @@ word(s) will be searched for via `eww-search-prefix'."
   (eww-setup-buffer)
   (eww--fetch-url url))
 
-(cl-defun eww--fetch-url (url &key (method 'get) data point buffer encode)
+(cl-defun eww--fetch-url (url &key (method 'get) data point buffer encode
+                              data-encoding)
   ;; Check whether the domain only uses "Highly Restricted" Unicode
   ;; IDNA characters.  If not, transform to punycode to indicate that
   ;; there may be funny business going on.
@@ -299,7 +300,8 @@ word(s) will be searched for via `eww-search-prefix'."
       (goto-char (point-min)))
     (let ((buffer (or buffer (current-buffer))))
       (with-url (url :method method
-                     :data data)
+                     :data data
+                     :data-encoding data-encoding)
         (eww-render point buffer encode)))))
 
 ;;;###autoload (defalias 'browse-web 'eww)
@@ -1397,6 +1399,7 @@ See URL `https://developer.mozilla.org/en-US/docs/Web/HTML/Element/Input'.")
 	(push (cons (plist-get (cdr elem) :name)
 		    (or (plist-get (cdr elem) :value) ""))
 	      values)))
+    (eww-save-history)
     (let ((inhibit-read-only t))
       (erase-buffer))
     (eww--fetch-url
@@ -1404,6 +1407,7 @@ See URL `https://developer.mozilla.org/en-US/docs/Web/HTML/Element/Input'.")
      :method (if (cl-equalp (cdr (assq :method form)) "post")
                  'post
                'get)
+     :data-encoding 'url-encode
      :data values)))
 
 (defun eww-browse-with-external-browser (&optional url)
