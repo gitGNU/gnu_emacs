@@ -1475,11 +1475,20 @@ The preference is a float determined from `shr-prefer-media-type'."
 	       (with-url-cached-p (shr-encode-url url)))
           (let ((buffer (current-buffer))
                 end)
-            (insert "-")
             (setq end (set-marker (make-marker) (point)))
-            (with-url ((shr-encode-url url) :cache t)
-              (shr-image-fetched buffer start end
-                                 (list :width width :height height)))))
+            (let ((data
+                   (with-url ((shr-encode-url url)
+                              :cache t
+                              :wait t)
+                     (when (url-okp)
+                       (shr-parse-image-data
+                        (intern (car
+                                 (mail-header-parse-content-type
+                                  (or (url-header 'content-type)
+                                      "text/plain")))
+                                obarray))))))
+              (funcall shr-put-image-function data alt
+                       (list :width width :height height)))))
          (t
           (when (image-type-available-p 'svg)
             (insert-image
