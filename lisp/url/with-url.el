@@ -413,32 +413,34 @@ If given, return the value in BUFFER instead."
       (let* ((data (with-url--data req))
              (headers
               (list
-               (list "User-Agent" url-user-agent)
-               (list "Connection" "close")
-               (list "Accept-Encoding"
+               (list 'user-agent (url-http-user-agent-string))
+               (list 'connection "close")
+               (list 'accept-encoding
                      (and (fboundp 'zlib-available-p)
                           (zlib-available-p)
                           nil
                           "gzip"))
-               (list "Accept" "*/*")
-               (list "Content-Type" (car data))
-               (list "Content-Transfer-Encoding" (cadr data))
-               (list "Content-Length" (length (cl-caddr data)))
-               (list "Cookies"
+               (list 'accept "*/*")
+               (list 'content-type (car data))
+               (list 'content-transfer-encoding (cadr data))
+               (list 'content-length (length (cl-caddr data)))
+               (list 'cookies
                      (and (memq (url-request-cookies req) '(t write))
                           (with-url--cookies parsed)))
-               (list "Host" (puny-encode-string (url-host parsed)))
-               (list "If-Modified-Since"
+               (list 'host (url-host parsed))
+               (list 'if-modified-since
                      (and (memq (url-request-cache req) '(t write))
                           (with-url-cache-time (url-request-url req)))))))
-        (cl-loop for (name value) in headers
-                 when (and (not (cl-assoc name (url-request-headers req)
-                                          :test #'cl-equalp))
-                           value)
-                 do (insert (format "%s: %s\r\n" name value)))
-        (cl-loop for (name value) in (url-request-headers req)
-                 when value
-                 do (insert (format "%s: %s\r\n" name value)))
+        ;; First insert automatically generated headers (unless we've
+        ;; given explicit headers that override them).
+        (dolist (elem headers)
+          (when (and (cadr elem)
+                     (not (assq (car elem) (url-request-headers req))))
+            (with-url--insert-header elem)))
+        ;; Then insert the explicitly given headers.
+        (dolist (elem (url-request-headers req))
+          (when (cadr elem)
+            (with-url--insert-header elem)))
         (insert "\r\n")
         (when data
           (insert (cl-caddr data)))
@@ -446,6 +448,34 @@ If given, return the value in BUFFER instead."
                   with-url-debug)
           (with-url--debug 'request (buffer-string)))))
     (process-send-region process (point-min) (point-max))))
+
+(defvar with-url--header-defaults
+  ;; Name Charset Encoding
+  '((host nil puny)))
+
+(defun with-url--insert-header (header)
+  (let* ((name (car header))
+         (defaults (cdr (assq name with-url--header-defaults)))
+         (charset (cond
+                   ((nthcdr 2 header)
+                    (nth 2 header))
+                   (defaults
+                    (car defaults))
+                   (t
+                    'utf-8)))
+         (encoding (or (nth 3 header) (nth 1 defaults) 'url-encode))
+         (value (nth 1 header)))
+    ;; Allow symbols and numbers as values for convenience.
+    (unless (stringp value)
+      (setq value (format "%s" value)))
+    (when charset
+      (setq value (encode-coding-string value charset)))
+    (insert (capitalize (symbol-name name)) ": ")
+    (insert (pcase encoding
+              (`puny (puny-encode-string value))
+              (`base64 (base64-encode-string value t))
+              (_ (url-hexify-string value))))
+    (insert "\n")))
 
 (defun with-url--debug (type string)
   (with-current-buffer (get-buffer-create "*url-debug*")
