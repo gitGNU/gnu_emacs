@@ -828,7 +828,7 @@ If the headers don't allow caching, nothing will be done."
 (defun with-url--prune-cache ()
   (dolist (file (directory-files-recursively
                  (expand-file-name "url/cached" user-emacs-directory)
-                 "\\'[a-z0-9]+\\'"))
+                 "\\`[a-z0-9]+\\'"))
     (with-temp-buffer
       (when (and (ignore-errors
                    (insert-file-contents-literally file)
