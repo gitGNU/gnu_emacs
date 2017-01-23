@@ -59,9 +59,9 @@
                         debug
                         headers
                         ignore-errors
-                        (method 'get)
+                        (method ''get)
                         data
-                        (data-charset 'utf-8)
+                        (data-charset ''utf-8)
                         data-encoding)
                        &body body)
   "Retrieve URL and execute BODY with point in a buffer with the response.
@@ -166,11 +166,11 @@ and `base64'."
                               :debug ,debug
                               :cookies ,cookies
                               :cache ,cache
-                              :headers ',headers
-                              :method ',method
+                              :headers ,headers
+                              :method ,method
                               :ignore-errors ,ignore-errors
                               :data ,data
-                              :data-charset ',data-charset
+                              :data-charset ,data-charset
                               :data-encoding ,data-encoding
                               :start-time (current-time)
                               :last-read-time (current-time)
@@ -413,7 +413,7 @@ If given, return the value in BUFFER instead."
       (let* ((data (with-url--data req))
              (headers
               (list
-               (list 'user-agent (url-http-user-agent-string))
+               (list 'user-agent (url-http-user-agent))
                (list 'connection "close")
                (list 'accept-encoding
                      (and (fboundp 'zlib-available-p)
@@ -463,7 +463,7 @@ If given, return the value in BUFFER instead."
                     (car defaults))
                    (t
                     'utf-8)))
-         (encoding (or (nth 3 header) (nth 1 defaults) 'url-encode))
+         (encoding (or (nth 3 header) (nth 1 defaults)))
          (value (nth 1 header)))
     ;; Allow symbols and numbers as values for convenience.
     (unless (stringp value)
@@ -474,8 +474,9 @@ If given, return the value in BUFFER instead."
     (insert (pcase encoding
               (`puny (puny-encode-string value))
               (`base64 (base64-encode-string value t))
-              (_ (url-hexify-string value))))
-    (insert "\n")))
+              (`url-encode (url-hexify-string value))
+              (_ value)))
+    (insert "\r\n")))
 
 (defun with-url--debug (type string)
   (with-current-buffer (get-buffer-create "*url-debug*")
