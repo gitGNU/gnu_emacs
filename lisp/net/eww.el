@@ -283,7 +283,7 @@ word(s) will be searched for via `eww-search-prefix'."
   (eww-setup-buffer)
   (eww--fetch-url url))
 
-(cl-defun eww--fetch-url (url &key (method "GET") data point buffer encode)
+(cl-defun eww--fetch-url (url &key (method 'get) data point buffer encode)
   ;; Check whether the domain only uses "Highly Restricted" Unicode
   ;; IDNA characters.  If not, transform to punycode to indicate that
   ;; there may be funny business going on.
@@ -1402,8 +1402,8 @@ See URL `https://developer.mozilla.org/en-US/docs/Web/HTML/Element/Input'.")
     (eww--fetch-url
      url
      :method (if (cl-equalp (cdr (assq :method form)) "post")
-                 "POST"
-               "GET")
+                 'post
+               'get)
      :data values)))
 
 (defun eww-browse-with-external-browser (&optional url)

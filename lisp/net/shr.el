@@ -1473,9 +1473,7 @@ The preference is a float determined from `shr-prefer-media-type'."
           (shr-insert alt))
 	 ((and (not shr-ignore-cache)
 	       (with-url-cached-p (shr-encode-url url)))
-          (let ((buffer (current-buffer))
-                end)
-            (setq end (set-marker (make-marker) (point)))
+          (let ((buffer (current-buffer)))
             (let ((data
                    (with-url ((shr-encode-url url)
                               :cache t
