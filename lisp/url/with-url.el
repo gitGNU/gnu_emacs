@@ -569,7 +569,9 @@ If given, return the value in BUFFER instead."
        ((> (url-request-redirect-times req) 10)
         (with-url--callback process '(500 "Too many redirections")))
        (t
-        (with-url--redirect process (url-header 'location)))))
+        (with-url--redirect process
+                            (url-expand-file-name
+                             (url-header 'location) (url-request-url req))))))
      (t
       (with-url--callback process)))))
 
