@@ -486,6 +486,12 @@ lost after dumping")))
             (charsets '()) (charset-aliases '())
             (cmds '()))
         (setcdr global-buffers-menu-map nil) ;; Get rid of buffer objects!
+        (push `(internal--set-standard-syntax-table
+                ,(standard-syntax-table))
+              cmds)
+        (push `(internal--set-standard-category-table
+                ,(standard-category-table))
+              cmds)
         (mapatoms
          (lambda (s)
            (when (fboundp s)
