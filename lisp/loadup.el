@@ -490,9 +490,6 @@ lost after dumping")))
         (push `(internal--set-standard-syntax-table
                 ,(standard-syntax-table))
               cmds)
-        (push `(internal--set-standard-category-table
-                ,(standard-category-table))
-              cmds)
         (mapatoms
          (lambda (s)
            (when (fboundp s)
@@ -629,6 +626,8 @@ lost after dumping")))
             (print `(dolist (f ',faces)
                       (face-spec-set f (get f 'face-defface-spec)
                                      'face-defface-spec)))
+            (terpri)
+            (print '(load "international/characters" nil t))
             (terpri)
             (print `(dolist (cs ',coding-system-aliases)
                       (define-coding-system-alias (car cs) (cdr cs))))

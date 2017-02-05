@@ -291,17 +291,6 @@ Return TABLE.  */)
   return table;
 }
 
-DEFUN ("internal--set-standard-category-table",
-       Finternal_set_standard_category_table,
-       Sinternal_set_standard_category_table, 1, 1, 0,
-       doc: /* Replace the standard category table used for new buffers.  */)
-  (Lisp_Object table)
-{
-  table = check_category_table (table);
-  Vstandard_category_table = table;
-  return table;
-}
-
 
 Lisp_Object
 char_category_set (int c)
@@ -525,7 +514,6 @@ See the documentation of the variable `word-combining-categories'.  */);
   defsubr (&Schar_category_set);
   defsubr (&Scategory_set_mnemonics);
   defsubr (&Smodify_category_entry);
-  defsubr (&Sinternal_set_standard_category_table);
 
   category_table_version = 0;
 }
