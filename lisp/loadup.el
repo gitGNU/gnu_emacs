@@ -511,6 +511,7 @@ lost after dumping")))
                                      ;; custom-delayed-init-variables
                                      current-load-list
                                      coding-system-list
+                                     internal--text-quoting-flag
                                      exec-path
                                      process-environment
                                      command-line-args noninteractive))))
