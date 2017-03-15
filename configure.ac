@@ -2789,6 +2789,8 @@ if test "${with_gnutls}" = "yes" ; then
     AC_DEFINE(HAVE_GNUTLS, 1, [Define if using GnuTLS.])
     EMACS_CHECK_MODULES([LIBGNUTLS3], [gnutls >= 3.0.0],
       [AC_DEFINE(HAVE_GNUTLS3, 1, [Define if using GnuTLS v3.])], [])
+    EMACS_CHECK_MODULES([LIBGNUTLS3_AEAD], [gnutls >= 3.4.0],
+      [AC_DEFINE(HAVE_GNUTLS3_AEAD, 1, [Define if using GnuTLS v3 with AEAD support.])], [])
   fi
 
   # Windows loads GnuTLS dynamically
