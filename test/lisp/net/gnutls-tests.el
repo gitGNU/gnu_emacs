@@ -206,8 +206,7 @@
                  "AUTH data and more data to go over the block limit"))
         (ciphers (remove-if
                   (lambda (c) (or (null (plist-get (cdr (assoc c (gnutls-ciphers)))
-                                              :cipher-aead-capable))
-                             (member c '("xCHACHA20-POLY1305" "xAES-128-CCM-8" "xAES-256-CCM-8"))))
+                                              :cipher-aead-capable))))
                   gnutls-tests-tested-ciphers)))
 
     (dolist (cipher ciphers)
