@@ -1763,7 +1763,6 @@ gnutls_symmetric_aead (bool encrypting, gnutls_cipher_algorithm_t gca,
 #ifdef HAVE_GNUTLS3_AEAD
 
   const char* desc = (encrypting ? "encrypt" : "decrypt");
-  Lisp_Object output = Qnil;
   int ret = GNUTLS_E_SUCCESS;
 
   gnutls_aead_cipher_hd_t acipher;
@@ -1780,8 +1779,8 @@ gnutls_symmetric_aead (bool encrypting, gnutls_cipher_algorithm_t gca,
       return Qnil;
     }
 
-  size_t storage_length = 2048; // 2K Ought To Be Enough For Anyone.
-  void *storage = xzalloc (storage_length);
+  size_t storage_length = SCHARS (input) + gnutls_cipher_get_tag_size (gca);
+  Lisp_Object storage = make_uninit_string (storage_length);
 
   const char* aead_auth_data = NULL;
   size_t aead_auth_size = 0;
@@ -1814,7 +1813,7 @@ gnutls_symmetric_aead (bool encrypting, gnutls_cipher_algorithm_t gca,
                                         aead_auth_data, aead_auth_size,
                                         gnutls_cipher_get_tag_size (gca),
                                         SSDATA (input), SCHARS (input),
-                                        storage, &storage_length);
+                                        SSDATA (storage), &storage_length);
     }
   else
     {
@@ -1823,12 +1822,12 @@ gnutls_symmetric_aead (bool encrypting, gnutls_cipher_algorithm_t gca,
                                         aead_auth_data, aead_auth_size,
                                         gnutls_cipher_get_tag_size (gca),
                                         SSDATA (input), SCHARS (input),
-                                        storage, &storage_length);
+                                        SSDATA (storage), &storage_length);
     }
 
   if (ret < GNUTLS_E_SUCCESS)
     {
-      xfree (storage);
+      memset(SSDATA (storage), 0, storage_length);
       gnutls_aead_cipher_deinit (acipher);
       const char* str = gnutls_strerror (ret);
       if (!str)
@@ -1838,13 +1837,9 @@ gnutls_symmetric_aead (bool encrypting, gnutls_cipher_algorithm_t gca,
       return Qnil;
     }
 
-  output = make_unibyte_string (storage, storage_length);
-  memset(storage, 0, storage_length);
-  xfree (storage);
-
   gnutls_aead_cipher_deinit (acipher);
 
-  return output;
+  return make_unibyte_string (SSDATA (storage), storage_length);
 #else
   error ("GnuTLS AEAD cipher %ld was invalid or not found", (long) gca);
   return Qnil;
