@@ -40,18 +40,18 @@
 
 (defvar gnutls-tests-tested-macs
   (remove-duplicates
-   (append '("MD5" "SHA1" "SHA224" "SHA256" "SHA384" "SHA512")
+   (append '(MD5 SHA1 SHA224 SHA256 SHA384 SHA512)
            (mapcar 'car (gnutls-macs)))))
 
 (defvar gnutls-tests-tested-digests
   (remove-duplicates
-   (append '("MD5" "SHA1" "SHA224" "SHA256" "SHA384" "SHA512")
+   (append '(MD5 SHA1 SHA224 SHA256 SHA384 SHA512)
            (mapcar 'car (gnutls-digests)))))
 
 (defvar gnutls-tests-tested-ciphers
   (remove-duplicates
    ; these cause FPEs or SEGVs
-   (remove-if (lambda (e) (member e '("ARCFOUR-128")))
+   (remove-if (lambda (e) (memq e '(ARCFOUR-128)))
               (mapcar 'car (gnutls-ciphers)))))
 
 (defvar gnutls-tests-mondo-strings
@@ -70,21 +70,21 @@
   (let ((macs (gnutls-macs))
         (digests (gnutls-digests))
         (ciphers (gnutls-ciphers)))
-    (dolist (name gnutls-tests-tested-macs)
-      (let ((plist (cdr (assoc name macs))))
-        (gnutls-tests-message "MAC %s %S" name plist)
+    (dolist (mac gnutls-tests-tested-macs)
+      (let ((plist (cdr (assq mac macs))))
+        (gnutls-tests-message "MAC %s %S" mac plist)
         (dolist (prop '(:mac-algorithm-id :mac-algorithm-length :mac-algorithm-keysize :mac-algorithm-noncesize))
           (should (plist-get plist prop)))
         (should (eq 'gnutls-mac-algorithm (plist-get plist :type)))))
-    (dolist (name gnutls-tests-tested-digests)
-      (let ((plist (cdr (assoc name digests))))
-        (gnutls-tests-message "digest %s %S" name plist)
+    (dolist (digest gnutls-tests-tested-digests)
+      (let ((plist (cdr (assq digest digests))))
+        (gnutls-tests-message "digest %s %S" digest plist)
         (dolist (prop '(:digest-algorithm-id :digest-algorithm-length))
           (should (plist-get plist prop)))
         (should (eq 'gnutls-digest-algorithm (plist-get plist :type)))))
-    (dolist (name gnutls-tests-tested-ciphers)
-      (let ((plist (cdr (assoc name ciphers))))
-        (gnutls-tests-message "cipher %s %S" name plist)
+    (dolist (cipher gnutls-tests-tested-ciphers)
+      (let ((plist (cdr (assq cipher ciphers))))
+        (gnutls-tests-message "cipher %s %S" cipher plist)
         (dolist (prop '(:cipher-id :cipher-blocksize :cipher-keysize :cipher-ivsize))
           (should (plist-get plist prop)))
         (should (eq 'gnutls-symmetric-cipher (plist-get plist :type)))))))
@@ -98,12 +98,12 @@
     ;; `secure-hash'. Unfortunately this list can't be obtained
     ;; programmatically.
     (dolist (sym '(md5 sha1 sha224 sha256 sha384 sha512))
-      (let* ((name (upcase (symbol-name sym)))
-             (plist (cdr (assoc name macs))))
-        (gnutls-tests-message "Checking digest MAC %s %S" name plist)
+      (let* ((mac (intern (upcase (symbol-name sym))))
+             (plist (cdr (assq mac macs))))
+        (gnutls-tests-message "Checking digest MAC %s %S" mac plist)
         (dolist (input gnutls-tests-mondo-strings)
           (should (gnutls-tests-hexstring-equal
-                   (gnutls-hash-digest name input)
+                   (gnutls-hash-digest mac input)
                    (secure-hash sym input nil nil t))))))))
 
 (ert-deftest test-gnutls-002-hashes-digests ()
@@ -111,18 +111,19 @@
   (skip-unless (gnutls-available-p))
   (setq gnutls-tests-message-prefix "digest external verification: ")
   (let ((macs (gnutls-macs)))
-    (dolist (test '(("57edf4a22be3c955ac49da2e2107b67a" "12345678901234567890123456789012345678901234567890123456789012345678901234567890" "MD5")
-                    ("d174ab98d277d9f5a5611c2c9f419d9f" "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789" "MD5")
-                    ("c3fcd3d76192e4007dfb496cca67e13b" "abcdefghijklmnopqrstuvwxyz" "MD5")
-                    ("f96b697d7cb7938d525a2f31aaf161d0" "message digest" "MD5")
-                    ("900150983cd24fb0d6963f7d28e17f72" "abc" "MD5")
-                    ("0cc175b9c0f1b6a831c399e269772661" "a" "MD5")
-                    ("a9993e364706816aba3e25717850c26c9cd0d89d" "abc" "SHA1")))
-      (destructuring-bind (hash input name) test
-        (let ((plist (cdr (assoc name macs)))
+    (dolist (test '(("57edf4a22be3c955ac49da2e2107b67a" "12345678901234567890123456789012345678901234567890123456789012345678901234567890" MD5)
+                    ("d174ab98d277d9f5a5611c2c9f419d9f" "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789" MD5)
+                    ("c3fcd3d76192e4007dfb496cca67e13b" "abcdefghijklmnopqrstuvwxyz" MD5)
+                    ("f96b697d7cb7938d525a2f31aaf161d0" "message digest" MD5)
+                    ("900150983cd24fb0d6963f7d28e17f72" "abc" MD5)
+                    ("0cc175b9c0f1b6a831c399e269772661" "a" MD5)
+                    ("a9993e364706816aba3e25717850c26c9cd0d89d" "abc" SHA1)
+                    ("a9993e364706816aba3e25717850c26c9cd0d89d" "abc" "SHA1"))) ; check string ID for digest
+      (destructuring-bind (hash input mac) test
+        (let ((plist (cdr (assq mac macs)))
               result)
-        (gnutls-tests-message "%s %S" name plist)
-        (setq result (encode-hex-string (gnutls-hash-digest name input)))
+        (gnutls-tests-message "%s %S" mac plist)
+        (setq result (encode-hex-string (gnutls-hash-digest mac input)))
         (gnutls-tests-message "%S => result %S" test result)
         (should (string-equal result hash)))))))
 
@@ -131,15 +132,16 @@
   (skip-unless (gnutls-available-p))
   (setq gnutls-tests-message-prefix "HMAC verification: ")
   (let ((macs (gnutls-macs)))
-    (dolist (test '(("f5c5021e60d9686fef3bb0414275fe4163bece61d9a95fec7a273746a437b986" "hello\n" "test" "SHA256")
-                    ("46b75292b81002fd873e89c532a1b8545d6efc9822ee938feba6de2723161a67" "more and more data goes into a file to exceed the buffer size" "test" "SHA256")
-                    ("81568ba71fa2c5f33cc84bf362466988f98eba3735479100b4e8908acad87ac4" "more and more data goes into a file to exceed the buffer size" "very long key goes here to exceed the key size" "SHA256")
-                    ("4bc830005783a73b8112f4bd5f4aa5f92e05b51e9b55c0cd6f9a7bee48371def" "more and more data goes into a file to exceed the buffer size" "" "SHA256")))
-      (destructuring-bind (hash input key name) test
-        (let ((plist (cdr (assoc name macs)))
+    (dolist (test '(("f5c5021e60d9686fef3bb0414275fe4163bece61d9a95fec7a273746a437b986" "hello\n" "test" SHA256)
+                    ("46b75292b81002fd873e89c532a1b8545d6efc9822ee938feba6de2723161a67" "more and more data goes into a file to exceed the buffer size" "test" SHA256)
+                    ("81568ba71fa2c5f33cc84bf362466988f98eba3735479100b4e8908acad87ac4" "more and more data goes into a file to exceed the buffer size" "very long key goes here to exceed the key size" SHA256)
+                    ("4bc830005783a73b8112f4bd5f4aa5f92e05b51e9b55c0cd6f9a7bee48371def" "more and more data goes into a file to exceed the buffer size" "" "SHA256") ; check string ID for HMAC
+                    ("4bc830005783a73b8112f4bd5f4aa5f92e05b51e9b55c0cd6f9a7bee48371def" "more and more data goes into a file to exceed the buffer size" "" SHA256)))
+      (destructuring-bind (hash input key mac) test
+        (let ((plist (cdr (assq mac macs)))
               result)
-          (gnutls-tests-message "%s %S" name plist)
-          (setq result (encode-hex-string (gnutls-hash-mac name key input)))
+          (gnutls-tests-message "%s %S" mac plist)
+          (setq result (encode-hex-string (gnutls-hash-mac mac key input)))
           (gnutls-tests-message "%S => result %S" test result)
           (should (string-equal result hash)))))))
 
@@ -170,7 +172,7 @@
         (inputs gnutls-tests-mondo-strings)
         (ivs '("" "-abc123-" "init" "ini2"))
         (ciphers (remove-if
-                  (lambda (c) (plist-get (cdr (assoc c (gnutls-ciphers)))
+                  (lambda (c) (plist-get (cdr (assq c (gnutls-ciphers)))
                                     :cipher-aead-capable))
                   gnutls-tests-tested-ciphers)))
 
@@ -178,8 +180,8 @@
       (dolist (iv ivs)
         (dolist (input inputs)
           (dolist (key keys)
-            (gnutls-tests-message "%S, starting key %S IV %S input %S" (assoc cipher (gnutls-ciphers)) key iv input)
-            (let* ((cplist (cdr (assoc cipher (gnutls-ciphers))))
+            (gnutls-tests-message "%S, starting key %S IV %S input %S" (assq cipher (gnutls-ciphers)) key iv input)
+            (let* ((cplist (cdr (assq cipher (gnutls-ciphers))))
                    (key (gnutls-tests-pad-or-trim key (plist-get cplist :cipher-keysize)))
                    (input (gnutls-tests-pad-to-multiple input (plist-get cplist :cipher-blocksize)))
                    (iv (gnutls-tests-pad-or-trim iv (plist-get cplist :cipher-ivsize)))
@@ -205,7 +207,7 @@
                  "AUTH data and more data to go over the block limit!"
                  "AUTH data and more data to go over the block limit"))
         (ciphers (remove-if
-                  (lambda (c) (or (null (plist-get (cdr (assoc c (gnutls-ciphers)))
+                  (lambda (c) (or (null (plist-get (cdr (assq c (gnutls-ciphers)))
                                               :cipher-aead-capable))))
                   gnutls-tests-tested-ciphers)))
 
@@ -214,8 +216,8 @@
         (dolist (input inputs)
           (dolist (auth auths)
             (dolist (key keys)
-              (gnutls-tests-message "%S, starting key %S IV %S input %S auth %S" (assoc cipher (gnutls-ciphers)) key iv input auth)
-              (let* ((cplist (cdr (assoc cipher (gnutls-ciphers))))
+              (gnutls-tests-message "%S, starting key %S IV %S input %S auth %S" (assq cipher (gnutls-ciphers)) key iv input auth)
+              (let* ((cplist (cdr (assq cipher (gnutls-ciphers))))
                      (key (gnutls-tests-pad-or-trim key (plist-get cplist :cipher-keysize)))
                      (input (gnutls-tests-pad-to-multiple input (plist-get cplist :cipher-blocksize)))
                      (iv (gnutls-tests-pad-or-trim iv (plist-get cplist :cipher-ivsize)))

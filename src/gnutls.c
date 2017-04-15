@@ -1698,20 +1698,6 @@ This function may also return `gnutls-e-again', or
 
 #ifdef HAVE_GNUTLS3
 
-/*
-TODO list:
-doc strings
-additions to the manual and NEWS
-maybe cache gnutls-macs and gnutls-ciphers
-
-EZ> Here and elsewhere, the size of the result is known in advance, so I
-EZ> would avoid allocating a scratch buffer and then copying its data
-EZ> (inside make_unibyte_string) into a newly-allocated string.  Instead,
-EZ> use make_uninit_string, and then pass its string data pointer to the
-EZ> algorithm that produces the digest.
-
-*/
-
 DEFUN ("gnutls-ciphers", Fgnutls_ciphers, Sgnutls_ciphers, 0, 0, 0,
        doc: /* Return alist of GnuTLS symmetric cipher descriptions as plists.
 The alist key is the cipher name. */)
@@ -1725,8 +1711,8 @@ The alist key is the cipher name. */)
       const gnutls_cipher_algorithm_t gca = gciphers[pos];
 
       Lisp_Object cp = listn (CONSTYPE_HEAP, 15,
-                              // The string description of the cipher ID
-                              build_unibyte_string (gnutls_cipher_get_name (gca)),
+                              // A symbol representing the cipher
+                              intern (gnutls_cipher_get_name (gca)),
                               // The internally meaningful cipher ID
                               QCcipher_id,
                               make_number (gca),
@@ -1864,7 +1850,12 @@ gnutls_symmetric (bool encrypting, Lisp_Object cipher,
   Lisp_Object info = Qnil;
   if (STRINGP (cipher))
     {
-      info = XCDR (Fassoc (cipher, Fgnutls_ciphers ()));
+      cipher = intern (SSDATA (cipher));
+    }
+
+  if (SYMBOLP (cipher))
+    {
+      info = XCDR (Fassq (cipher, Fgnutls_ciphers ()));
     }
   else if (INTEGERP (cipher))
     {
@@ -1982,12 +1973,12 @@ DEFUN ("gnutls-symmetric-encrypt", Fgnutls_symmetric_encrypt, Sgnutls_symmetric_
 Returns nil on error. INPUT, KEY, and IV should be unibyte
 strings.
 
-The alist of symmetric ciphers can be obtained with `gnutls-ciphers`. The
-CIPHER may be a string matching a key in that alist, or a plist
-with the `:cipher-id' numeric property, or the number itself.
+The alist of symmetric ciphers can be obtained with `gnutls-ciphers`.
+The CIPHER may be a string or symbol matching a key in that alist, or
+a plist with the `:cipher-id' numeric property, or the number itself.
 
 AEAD ciphers: these ciphers will have a `gnutls-ciphers' entry with
-:cipher-aead-capable set to t. AEAD_AUTH can be a unibyte string for
+:cipher-aead-capable set to t.  AEAD_AUTH can be a unibyte string for
 these AEAD ciphers, and it may be omitted (nil) as well. */)
      (Lisp_Object cipher, Lisp_Object key, Lisp_Object iv, Lisp_Object input, Lisp_Object aead_auth)
 {
@@ -2000,12 +1991,12 @@ DEFUN ("gnutls-symmetric-decrypt", Fgnutls_symmetric_decrypt, Sgnutls_symmetric_
 Returns nil on error. INPUT, KEY, and IV should be unibyte
 strings. AEAD_AUTH may be a unibyte string or omitted (nil).
 
-The alist of symmetric ciphers can be obtained with `gnutls-ciphers`. The
-CIPHER may be a string matching a key in that alist, or a plist
-with the `:cipher-id' numeric property, or the number itself.
+The alist of symmetric ciphers can be obtained with `gnutls-ciphers`.
+The CIPHER may be a string or symbol matching a key in that alist, or
+a plist with the `:cipher-id' numeric property, or the number itself.
 
 AEAD ciphers: these ciphers will have a `gnutls-ciphers' entry with
-:cipher-aead-capable set to t. AEAD_AUTH can be a unibyte string for
+:cipher-aead-capable set to t.  AEAD_AUTH can be a unibyte string for
 these AEAD ciphers, and it may be omitted (nil) as well. */)
      (Lisp_Object cipher, Lisp_Object key, Lisp_Object iv, Lisp_Object input, Lisp_Object aead_auth)
 {
@@ -2028,8 +2019,8 @@ the mac-algorithm method name. */)
       const char* name = gnutls_mac_get_name (gma);
 
       Lisp_Object mp = listn (CONSTYPE_HEAP, 11,
-                              // The string description of the mac-algorithm ID.
-                              build_unibyte_string (name),
+                              // A symbol representing the mac-algorithm.
+                              intern (name),
                               // The internally meaningful mac-algorithm ID.
                               QCmac_algorithm_id,
                               make_number (gma),
@@ -2067,8 +2058,8 @@ the digest-algorithm method name. */)
       const char* name = gnutls_digest_get_name (gda);
 
       Lisp_Object mp = listn (CONSTYPE_HEAP, 7,
-                              // The string description of the digest-algorithm ID.
-                              build_unibyte_string (name),
+                              // A symbol representing the digest-algorithm.
+                              intern (name),
                               // The internally meaningful digest-algorithm ID.
                               QCdigest_algorithm_id,
                               make_number (gda),
@@ -2087,11 +2078,12 @@ the digest-algorithm method name. */)
 DEFUN ("gnutls-hash-mac", Fgnutls_hash_mac, Sgnutls_hash_mac, 3, 3, 0,
        doc: /* Hash INPUT string with HASH-METHOD and KEY string into a unibyte string.
 
-Returns nil on error. INPUT and KEY should be unibyte strings.
+Returns nil on error.  INPUT and KEY should be unibyte strings.
 
-The alist of MAC algorithms can be obtained with `gnutls-macs`. The
-HASH-METHOD may be a string matching a key in that alist, or a plist
-with the `:mac-algorithm-id' numeric property, or the number itself. */)
+The alist of MAC algorithms can be obtained with `gnutls-macs`.  The
+HASH-METHOD may be a string or symbol matching a key in that alist, or
+a plist with the `:mac-algorithm-id' numeric property, or the number
+itself. */)
      (Lisp_Object hash_method, Lisp_Object key, Lisp_Object input)
 {
   CHECK_STRING (input);
@@ -2104,7 +2096,12 @@ with the `:mac-algorithm-id' numeric property, or the number itself. */)
   Lisp_Object info = Qnil;
   if (STRINGP (hash_method))
     {
-      info = XCDR (Fassoc (hash_method, Fgnutls_macs ()));
+      hash_method = intern (SSDATA (hash_method));
+    }
+
+  if (SYMBOLP (hash_method))
+    {
+      info = XCDR (Fassq (hash_method, Fgnutls_macs ()));
     }
   else if (INTEGERP (hash_method))
     {
@@ -2169,12 +2166,12 @@ with the `:mac-algorithm-id' numeric property, or the number itself. */)
 DEFUN ("gnutls-hash-digest", Fgnutls_hash_digest, Sgnutls_hash_digest, 2, 2, 0,
        doc: /* Digest INPUT string with DIGEST-METHOD into a unibyte string.
 
-Returns nil on error. INPUT should be a unibyte string.
+Returns nil on error.  INPUT should be a unibyte string.
 
 The alist of digest algorithms can be obtained with `gnutls-digests`.
-The DIGEST-METHOD may be a string matching a key in that alist, or
-a plist with the `:digest-algorithm-id' numeric property, or the number
-itself. */)
+The DIGEST-METHOD may be a string or symbol matching a key in that
+alist, or a plist with the `:digest-algorithm-id' numeric property, or
+the number itself. */)
      (Lisp_Object digest_method, Lisp_Object input)
 {
   CHECK_STRING (input);
@@ -2186,7 +2183,12 @@ itself. */)
   Lisp_Object info = Qnil;
   if (STRINGP (digest_method))
     {
-      info = XCDR (Fassoc (digest_method, Fgnutls_digests ()));
+      digest_method = intern (SSDATA (digest_method));
+    }
+
+  if (SYMBOLP (digest_method))
+    {
+      info = XCDR (Fassq (digest_method, Fgnutls_digests ()));
     }
   else if (INTEGERP (digest_method))
     {
