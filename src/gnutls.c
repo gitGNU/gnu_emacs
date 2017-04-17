@@ -2058,7 +2058,7 @@ lists.
 IV, KEY, and AEAD_AUTH will be wiped by the function.
 
 INPUT and KEY and IV and AEAD_AUTH can be a list in the format
-(BUFFER-OR-STRING INPUT-START INPUT-END CODING-SYSTEM NOERROR) and
+(BUFFER-OR-STRING START END CODING-SYSTEM NOERROR) and
 those elements are extracted and used as in `secure-hash' which see.
 
 The alist of symmetric ciphers can be obtained with `gnutls-ciphers`.
@@ -2086,7 +2086,7 @@ IV, KEY, and AEAD_AUTH will be wiped by the function if they are
 strings.
 
 INPUT and KEY and IV and AEAD_AUTH can be a list in the format
-(BUFFER-OR-STRING INPUT-START INPUT-END CODING-SYSTEM NOERROR) and
+(BUFFER-OR-STRING START END CODING-SYSTEM NOERROR) and
 those elements are extracted and used as in `secure-hash' which see.
 
 The alist of symmetric ciphers can be obtained with `gnutls-ciphers`.
@@ -2180,8 +2180,8 @@ Returns nil on error.  INPUT and KEY can be strings or buffers or lists.
 
 KEY will be wiped by the function if it's a string.
 
-INPUT and KEY can be a list in the format (BUFFER-OR-STRING INPUT-START
-INPUT-END CODING-SYSTEM NOERROR) and those elements are extracted and
+INPUT and KEY can be a list in the format (BUFFER-OR-STRING START
+END CODING-SYSTEM NOERROR) and those elements are extracted and
 used as in `secure-hash' which see.
 
 The alist of MAC algorithms can be obtained with `gnutls-macs`.  The
@@ -2299,8 +2299,8 @@ DEFUN ("gnutls-hash-digest", Fgnutls_hash_digest, Sgnutls_hash_digest, 2, 2, 0,
 
 Returns nil on error.  INPUT can be a string or a buffer or a list.
 
-INPUT can be a list in the format (BUFFER-OR-STRING INPUT-START
-INPUT-END CODING-SYSTEM NOERROR) and those elements are extracted and
+INPUT can be a list in the format (BUFFER-OR-STRING START
+END CODING-SYSTEM NOERROR) and those elements are extracted and
 used as in `secure-hash' which see.
 
 The alist of digest algorithms can be obtained with `gnutls-digests`.
