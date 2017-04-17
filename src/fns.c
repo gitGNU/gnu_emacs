@@ -4984,6 +4984,8 @@ The two optional arguments START and END are positions specifying for
 which part of OBJECT to compute the hash.  If nil or omitted, uses the
 whole OBJECT.
 
+The full list of algorithms can be obtained with `secure-hash-algorithms'.
+
 If BINARY is non-nil, returns a string in binary form.  */)
   (Lisp_Object algorithm, Lisp_Object object, Lisp_Object start, Lisp_Object end, Lisp_Object binary)
 {
