@@ -103,6 +103,12 @@
       (let ((plist (cdr (assq (cdr mcell) macs))))
         (gnutls-tests-message "Checking digest MAC %S %S" mcell plist)
         (dolist (input gnutls-tests-mondo-strings)
+          ;; Test buffer extraction
+          (with-temp-buffer
+            (insert input)
+            (should (gnutls-tests-hexstring-equal
+                     (gnutls-hash-digest (cdr mcell) (current-buffer))
+                     (secure-hash (car mcell) (current-buffer) nil nil t))))
           (should (gnutls-tests-hexstring-equal
                    (gnutls-hash-digest (cdr mcell) input)
                    (secure-hash (car mcell) input nil nil t))))))))
@@ -122,11 +128,17 @@
                     ("a9993e364706816aba3e25717850c26c9cd0d89d" "abc" "SHA1"))) ; check string ID for digest
       (destructuring-bind (hash input mac) test
         (let ((plist (cdr (assq mac macs)))
-              result)
+              result resultb)
         (gnutls-tests-message "%s %S" mac plist)
         (setq result (encode-hex-string (gnutls-hash-digest mac input)))
         (gnutls-tests-message "%S => result %S" test result)
-        (should (string-equal result hash)))))))
+        (should (string-equal result hash))
+        ;; Test buffer extraction
+        (with-temp-buffer
+          (insert input)
+          (setq resultb (encode-hex-string (gnutls-hash-digest mac (current-buffer))))
+          (gnutls-tests-message "%S => result from buffer %S" test resultb)
+          (should (string-equal resultb hash))))))))
 
 (ert-deftest test-gnutls-003-hashes-hmacs ()
   "Test some predefined GnuTLS HMAC outputs for SHA256."
@@ -229,75 +241,6 @@
                 (should-not (gnutls-tests-hexstring-equal input data))
                 (should-not (gnutls-tests-hexstring-equal data reverse))
                 (should (gnutls-tests-hexstring-equal input reverse))))))))))
-
-;; (ert-deftest test-nettle-006-pbkdf2-RFC-6070 ()
-;;     "Test the GnuTLS PBKDF2 SHA1 hashing with the RFC 6070 test set"
-;;     (should (string-equal (encode-hex-string (nettle-pbkdf2 "pass\000word" "sa\000lt" 4096 16 "sha1"))
-;;                           "56fa6aa75548099dcc37d7f03425e0c3"))
-;;     (let ((tests '("0c60c80f961f0e71f3a9b524af6012062fe037a6:password:salt:1:x:sha1"
-;;                    "ea6c014dc72d6f8ccd1ed92ace1d41f0d8de8957:password:salt:2:x:sha1"
-;;                    "4b007901b765489abead49d926f721d065a429c1:password:salt:4096:x:sha1"
-;;                    ;; "eefe3d61cd4da4e4e9945b3d6ba2158c2634e984:password:salt:16777216:x:sha1" ;; enable for a speed test :)
-;;                    "3d2eec4fe41c849b80c8d83662c0e44a8b291a964cf2f07038:passwordPASSWORDpassword:saltSALTsaltSALTsaltSALTsaltSALTsalt:4096:x:sha1"))
-;;           test expected)
-;;       (while (and tests (setq test (split-string (pop tests) ":")))
-;;         (setq expected (pop test))
-;;         (setf (nth 2 test) (string-to-number (nth 2 test)))
-;;         (setf (nth 3 test) (length (decode-hex-string expected)))
-;;         ;; (message "Testing 006-pbkdf2-RFC-6070 %S" test)
-;;         (should (string-equal (encode-hex-string (apply 'nettle-pbkdf2 test))
-;;                               expected)))))
-
-;; (ert-deftest test-nettle-007-rsa-verify ()
-;;     "Test the GnuTLS RSA signature verification"
-;;     ;; signature too short
-;;     (should-error (nettle-rsa-verify "Test the GnuTLS RSA signature"
-;;                                      ""
-;;                                      "Test the GnuTLS RSA signature"
-;;                                      "sha1"))
-
-;;     ;; key too short
-;;     (should-error (nettle-rsa-verify "Test the GnuTLS RSA signature"
-;;                                      "Test the GnuTLS RSA signature"
-;;                                      ""
-;;                                      "sha1"))
-
-;;     ;; invalid hashing method
-;;     (should-error (nettle-rsa-verify "Test the GnuTLS RSA signature"
-;;                                      "Test the GnuTLS RSA signature"
-;;                                      ""
-;;                                      "no such method"))
-
-;;     ;; key generated with:
-;;     ;; openssl genrsa -out privkey.pem 2048
-;;     ;; openssl rsa -in privkey.pem -pubout > pubkey.pem
-;;     (let* ((key (substring "
-;; -----BEGIN PUBLIC KEY-----
-;; MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAreGA/Qky9W3izQV0kzba
-;; 7wKl/wzwxkbbQxvcUqUT1krgAbO/n1tYFjXdJZoWwbMO/qv7NRoMDY4yPWGpsQfY
-;; +PSIknAhTZVbgwXrm/wb37+hKRKax2UZ9A/Rx4vJZRYlkpvZ9LbBziseFNN7SMWW
-;; qkjBO/NeT8/I9mURDa+4RoYfT6ZwjTvt808PH7uIghk+MHAx9EMBAfafF1Jn9TqW
-;; y+Hgdqik9sZteMvCumvGK4grSwzdfPO5I05tt/0I7QVPxlXbHIk/bBsE7mpgOxur
-;; P0DAkFKtYDM7oZPBwB6X778ba2EEFKPpVIyzw/jlDPd9PB6gE6dixmax3Hlg69RI
-;; EwIDAQAB
-;; -----END PUBLIC KEY-----
-;; " 28 426))
-;;            ;; 24 skipped bytes are the header
-;;            (key-bitstring (substring (base64-decode-string key) 24)))
-;;     ;; invalid signature, valid key
-;;     (should-not (nettle-rsa-verify "Test the GnuTLS RSA signature"
-;;                                    "Test the GnuTLS RSA signature"
-;;                                    key-bitstring
-;;                                    "sha1"))
-;;     ;; valid signature, valid key
-;;     ; doesn't work; generated with "openssl rsautl -sign -in /tmp/test -inkey /tmp/privkey.pem" but contains other baggage
-;;     (should (nettle-rsa-verify "Test the GnuTLS RSA signature"
-;;                                (decode-hex-string "abf710d920de0a210167e62995d5cb06fb0ff6a3f81e2f1965dd3f4716883ab61b7dec40d1ebde89b0657473a434d0333177f183f71a9f4b84a49781b1e4bc440e042f2eb4441000ba07168cdb190c5aebba8c433420f6fc28b6997cbfee061170210bfa65294199e6d6c8c5e1a16421942371f6115d77263b859a75645b6b70d56f14ad378c8499318ff05eda9d24a61d854a3d7f6b67b037abb8d25e4b11ca3e42bdb823cfac34c70057ecd55cbb8449346c0824b46f6c668d14f1744bad7d05470953981df32fde24d2a1f27e58bf9e7d99b20b39b25844c53945dcbbd8b406e78bc0b8aee48c0ec8a26e70301eeeb12ba733e0baf7b82c8e25ac3ee89291")
-;;                                key-bitstring
-;;                                "sha1"))
-;; ))
-
-;; ;; (message (encode-hex-string (nettle-pbkdf2 "password" "salt" 1 20 "sha1")))
 
 (provide 'gnutls-tests)
 ;;; gnutls-tests.el ends here

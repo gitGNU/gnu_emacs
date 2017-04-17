@@ -4740,22 +4740,24 @@ DEFUN ("secure-hash-algorithms", Fsecure_hash_algorithms,
                 Qsha512);
 }
 
-/* ALGORITHM is a symbol: md5, sha1, sha224 and so on. */
-
-static Lisp_Object
-secure_hash (Lisp_Object algorithm, Lisp_Object object, Lisp_Object start,
-	     Lisp_Object end, Lisp_Object coding_system, Lisp_Object noerror,
-	     Lisp_Object binary)
+/* Extract data from a string or a buffer. SPEC is a list of
+(BUFFER-OR-STRING START END CODING-SYSTEM NOERROR) which behave as
+specified with `secure-hash'.  */
+const char*
+extract_data_from_object (Lisp_Object spec,
+                          ptrdiff_t *start_byte,
+                          ptrdiff_t *end_byte)
 {
-  ptrdiff_t size, start_char = 0, start_byte, end_char = 0, end_byte;
+  ptrdiff_t size, start_char = 0, end_char = 0;
   register EMACS_INT b, e;
   register struct buffer *bp;
   EMACS_INT temp;
-  int digest_size;
-  void *(*hash_func) (const char *, size_t, void *);
-  Lisp_Object digest;
 
-  CHECK_SYMBOL (algorithm);
+  Lisp_Object object        = Fnth (make_number (0), spec);
+  Lisp_Object start	    = Fnth (make_number (1), spec);
+  Lisp_Object end	    = Fnth (make_number (2), spec);
+  Lisp_Object coding_system = Fnth (make_number (3), spec);
+  Lisp_Object noerror	    = Fnth (make_number (4), spec);
 
   if (STRINGP (object))
     {
@@ -4786,10 +4788,10 @@ secure_hash (Lisp_Object algorithm, Lisp_Object object, Lisp_Object start,
       size = SCHARS (object);
       validate_subarray (object, start, end, size, &start_char, &end_char);
 
-      start_byte = !start_char ? 0 : string_char_to_byte (object, start_char);
-      end_byte = (end_char == size
-		  ? SBYTES (object)
-		  : string_char_to_byte (object, end_char));
+      *start_byte = !start_char ? 0 : string_char_to_byte (object, start_char);
+      *end_byte = (end_char == size
+                   ? SBYTES (object)
+                   : string_char_to_byte (object, end_char));
     }
   else
     {
@@ -4892,9 +4894,39 @@ secure_hash (Lisp_Object algorithm, Lisp_Object object, Lisp_Object start,
 
       if (STRING_MULTIBYTE (object))
 	object = code_convert_string (object, coding_system, Qnil, 1, 0, 0);
-      start_byte = 0;
-      end_byte = SBYTES (object);
+      *start_byte = 0;
+      *end_byte = SBYTES (object);
     }
+
+  return SSDATA (object);
+}
+
+
+/* ALGORITHM is a symbol: md5, sha1, sha224 and so on. */
+
+static Lisp_Object
+secure_hash (Lisp_Object algorithm, Lisp_Object object, Lisp_Object start,
+	     Lisp_Object end, Lisp_Object coding_system, Lisp_Object noerror,
+	     Lisp_Object binary)
+{
+  ptrdiff_t start_byte, end_byte;
+  int digest_size;
+  void *(*hash_func) (const char *, size_t, void *);
+  Lisp_Object digest;
+
+  CHECK_SYMBOL (algorithm);
+
+  Lisp_Object spec = listn (CONSTYPE_HEAP, 5,
+                            object,
+                            start,
+                            end,
+                            coding_system,
+                            noerror);
+
+  const char* input = extract_data_from_object (spec, &start_byte, &end_byte);
+
+  if (input == NULL)
+    error ("secure_hash: failed to extract data from object, aborting!");
 
   if (EQ (algorithm, Qmd5))
     {
@@ -4933,7 +4965,7 @@ secure_hash (Lisp_Object algorithm, Lisp_Object object, Lisp_Object start,
      hexified value */
   digest = make_uninit_string (digest_size * 2);
 
-  hash_func (SSDATA (object) + start_byte,
+  hash_func (input + start_byte,
 	     end_byte - start_byte,
 	     SSDATA (digest));
 

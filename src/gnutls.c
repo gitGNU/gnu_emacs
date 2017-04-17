@@ -24,6 +24,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "process.h"
 #include "gnutls.h"
 #include "coding.h"
+#include "buffer.h"
 
 #ifdef HAVE_GNUTLS
 
@@ -1743,8 +1744,11 @@ The alist key is the cipher name. */)
 
 static Lisp_Object
 gnutls_symmetric_aead (bool encrypting, gnutls_cipher_algorithm_t gca,
-                       Lisp_Object cipher, Lisp_Object key, Lisp_Object iv,
-                       Lisp_Object input, Lisp_Object aead_auth)
+                       Lisp_Object cipher,
+                       const char* kdata, size_t ksize,
+                       const char* vdata, size_t vsize,
+                       const char* idata, size_t isize,
+                       Lisp_Object aead_auth)
 {
 #ifdef HAVE_GNUTLS3_AEAD
 
@@ -1752,7 +1756,7 @@ gnutls_symmetric_aead (bool encrypting, gnutls_cipher_algorithm_t gca,
   int ret = GNUTLS_E_SUCCESS;
 
   gnutls_aead_cipher_hd_t acipher;
-  gnutls_datum_t key_datum = { (unsigned char*) SSDATA (key), SCHARS (key) };
+  gnutls_datum_t key_datum = { (unsigned char*) kdata, ksize };
   ret = gnutls_aead_cipher_init (&acipher, gca, &key_datum);
 
   if (ret < GNUTLS_E_SUCCESS)
@@ -1765,17 +1769,31 @@ gnutls_symmetric_aead (bool encrypting, gnutls_cipher_algorithm_t gca,
       return Qnil;
     }
 
-  size_t storage_length = SCHARS (input) + gnutls_cipher_get_tag_size (gca);
+  size_t storage_length = isize + gnutls_cipher_get_tag_size (gca);
   USE_SAFE_ALLOCA;
   unsigned char *storage = SAFE_ALLOCA (storage_length);
 
   const char* aead_auth_data = NULL;
   size_t aead_auth_size = 0;
 
-  if (STRINGP (aead_auth))
+  if (!NILP (aead_auth))
     {
-     aead_auth_data = SSDATA (aead_auth);
-     aead_auth_size = SCHARS (aead_auth);
+      if (BUFFERP (aead_auth) || STRINGP (aead_auth))
+        aead_auth = list1 (aead_auth);
+
+      CHECK_CONS (aead_auth);
+
+      ptrdiff_t astart_byte, aend_byte;
+      const char* adata = extract_data_from_object (aead_auth, &astart_byte, &aend_byte);
+
+      if (adata == NULL)
+        {
+          error ("GnuTLS AEAD cipher auth extraction failed");
+          return Qnil;
+        }
+
+      aead_auth_data = adata;
+      aead_auth_size = aend_byte - astart_byte;
     }
 
   size_t expected_remainder = 0;
@@ -1783,12 +1801,12 @@ gnutls_symmetric_aead (bool encrypting, gnutls_cipher_algorithm_t gca,
   if (!encrypting)
     expected_remainder = gnutls_cipher_get_tag_size (gca);
 
-  if ((SCHARS (input) - expected_remainder) % gnutls_cipher_get_block_size (gca) != 0)
+  if ((isize - expected_remainder) % gnutls_cipher_get_block_size (gca) != 0)
     {
       error ("GnuTLS AEAD cipher %s/%s input block length %ld was not a "
              "multiple of the required %ld plus the expected tag remainder %ld",
              gnutls_cipher_get_name (gca), desc,
-             SCHARS (input), (long) gnutls_cipher_get_block_size (gca),
+             (long) isize, (long) gnutls_cipher_get_block_size (gca),
              (long) expected_remainder);
       return Qnil;
     }
@@ -1796,28 +1814,24 @@ gnutls_symmetric_aead (bool encrypting, gnutls_cipher_algorithm_t gca,
   if (encrypting)
     {
       ret = gnutls_aead_cipher_encrypt (acipher,
-                                        SSDATA (iv), SCHARS (iv),
+                                        vdata, vsize,
                                         aead_auth_data, aead_auth_size,
                                         gnutls_cipher_get_tag_size (gca),
-                                        SSDATA (input), SCHARS (input),
+                                        idata, isize,
                                         storage, &storage_length);
     }
   else
     {
       ret = gnutls_aead_cipher_decrypt (acipher,
-                                        SSDATA (iv), SCHARS (iv),
+                                        vdata, vsize,
                                         aead_auth_data, aead_auth_size,
                                         gnutls_cipher_get_tag_size (gca),
-                                        SSDATA (input), SCHARS (input),
+                                        idata, isize,
                                         storage, &storage_length);
     }
 
-  Fclear_string (key);
-  Fclear_string (iv);
-  if (STRINGP (aead_auth))
-    {
-      Fclear_string (aead_auth);
-    }
+  if (!NILP (aead_auth) && STRINGP (XCAR (aead_auth)))
+    Fclear_string (XCAR (aead_auth));
 
   if (ret < GNUTLS_E_SUCCESS)
     {
@@ -1851,9 +1865,21 @@ gnutls_symmetric (bool encrypting, Lisp_Object cipher,
                   Lisp_Object key, Lisp_Object iv,
                   Lisp_Object input, Lisp_Object aead_auth)
 {
-  CHECK_STRING (input);
-  CHECK_STRING (key);
-  CHECK_STRING (iv);
+  if (BUFFERP (key) || STRINGP (key))
+    key = list1 (key);
+
+  CHECK_CONS (key);
+
+  if (BUFFERP (input) || STRINGP (input))
+    input = list1 (input);
+
+  CHECK_CONS (input);
+
+  if (BUFFERP (iv) || STRINGP (iv))
+    iv = list1 (iv);
+
+  CHECK_CONS (iv);
+
 
   const char* desc = (encrypting ? "encrypt" : "decrypt");
 
@@ -1895,41 +1921,78 @@ gnutls_symmetric (bool encrypting, Lisp_Object cipher,
       return Qnil;
     }
 
-  if (SCHARS (key) != gnutls_cipher_get_key_size (gca))
+  ptrdiff_t kstart_byte, kend_byte;
+  const char* kdata = extract_data_from_object (key, &kstart_byte, &kend_byte);
+
+  if (kdata == NULL)
+    {
+      error ("GnuTLS cipher key extraction failed");
+      return Qnil;
+    }
+
+  if ((kend_byte - kstart_byte) != gnutls_cipher_get_key_size (gca))
     {
       error ("GnuTLS cipher %s/%s key length %ld was not equal to "
              "the required %ld",
              gnutls_cipher_get_name (gca), desc,
-             SCHARS (key), (long) gnutls_cipher_get_key_size (gca));
+             kend_byte - kstart_byte, (long) gnutls_cipher_get_key_size (gca));
       return Qnil;
     }
 
-  if (SCHARS (iv) != gnutls_cipher_get_iv_size (gca))
+  ptrdiff_t vstart_byte, vend_byte;
+  const char* vdata = extract_data_from_object (iv, &vstart_byte, &vend_byte);
+
+  if (vdata == NULL)
+    {
+      error ("GnuTLS cipher IV extraction failed");
+      return Qnil;
+    }
+
+  if ((vend_byte - vstart_byte) != gnutls_cipher_get_iv_size (gca))
     {
       error ("GnuTLS cipher %s/%s IV length %ld was not equal to "
              "the required %ld",
              gnutls_cipher_get_name (gca), desc,
-             SCHARS (iv), (long) gnutls_cipher_get_iv_size (gca));
+             vend_byte - vstart_byte, (long) gnutls_cipher_get_iv_size (gca));
+      return Qnil;
+    }
+
+  ptrdiff_t istart_byte, iend_byte;
+  const char* idata = extract_data_from_object (input, &istart_byte, &iend_byte);
+
+  if (idata == NULL)
+    {
+      error ("GnuTLS cipher input extraction failed");
       return Qnil;
     }
 
   // Is this an AEAD cipher?
   if (gnutls_cipher_get_tag_size (gca) > 0)
     {
-      return gnutls_symmetric_aead (encrypting, gca, cipher, key, iv, input, aead_auth);
+      Lisp_Object aead_output =
+        gnutls_symmetric_aead (encrypting, gca, cipher,
+                               kdata, kend_byte - kstart_byte,
+                               vdata, vend_byte - vstart_byte,
+                               idata, iend_byte - istart_byte,
+                               aead_auth);
+      if (STRINGP (XCAR (key)))
+        Fclear_string (XCAR (key));
+      if (STRINGP (XCAR (iv)))
+        Fclear_string (XCAR (iv));
+      return aead_output;
     }
 
-  if (SCHARS (input) % gnutls_cipher_get_block_size (gca) != 0)
+  if ((iend_byte - istart_byte) % gnutls_cipher_get_block_size (gca) != 0)
     {
       error ("GnuTLS cipher %s/%s input block length %ld was not a multiple "
              "of the required %ld",
              gnutls_cipher_get_name (gca), desc,
-             SCHARS (input), (long) gnutls_cipher_get_block_size (gca));
+             iend_byte - istart_byte, (long) gnutls_cipher_get_block_size (gca));
       return Qnil;
     }
 
   gnutls_cipher_hd_t hcipher;
-  gnutls_datum_t key_datum = { (unsigned char*) SSDATA (key), SCHARS (key) };
+  gnutls_datum_t key_datum = { (unsigned char*) kdata, kend_byte - kstart_byte };
 
   ret = gnutls_cipher_init (&hcipher, gca, &key_datum, NULL);
 
@@ -1944,28 +2007,30 @@ gnutls_symmetric (bool encrypting, Lisp_Object cipher,
     }
 
   // TODO: support streaming block mode
-  gnutls_cipher_set_iv (hcipher, SSDATA (iv), SCHARS (iv));
+  gnutls_cipher_set_iv (hcipher, (void*) vdata, vend_byte - vstart_byte);
 
   // GnuTLS docs: "For the supported ciphers the encrypted data length
   // will equal the plaintext size."
-  size_t storage_length = SCHARS (input);
+  size_t storage_length = iend_byte - istart_byte;
   Lisp_Object storage = make_uninit_string (storage_length);
 
   if (encrypting)
     {
       ret = gnutls_cipher_encrypt2 (hcipher,
-                                    SSDATA (input), SCHARS (input),
+                                    idata, iend_byte - istart_byte,
                                     SSDATA (storage), storage_length);
     }
   else
     {
       ret = gnutls_cipher_decrypt2 (hcipher,
-                                    SSDATA (input), SCHARS (input),
+                                    idata, iend_byte - istart_byte,
                                     SSDATA (storage), storage_length);
     }
 
-  Fclear_string (key);
-  Fclear_string (iv);
+  if (STRINGP (XCAR (key)))
+    Fclear_string (XCAR (key));
+  if (STRINGP (XCAR (iv)))
+    Fclear_string (XCAR (iv));
 
   if (ret < GNUTLS_E_SUCCESS)
     {
@@ -2010,7 +2075,15 @@ DEFUN ("gnutls-symmetric-decrypt", Fgnutls_symmetric_decrypt, Sgnutls_symmetric_
 Returns nil on error. INPUT, KEY, and IV should be unibyte
 strings. AEAD_AUTH may be a unibyte string or omitted (nil).
 
-IV, KEY, and AEAD_AUTH will be wiped by the function.
+Returns nil on error.  INPUT, KEY, and IV can be strings or buffers or
+lists.
+
+IV, KEY, and AEAD_AUTH will be wiped by the function if they are
+strings.
+
+INPUT and KEY and AEAD_AUTH can be a list in the format
+(BUFFER-OR-STRING INPUT-START INPUT-END CODING-SYSTEM NOERROR) and
+those elements are extracted and used as in `secure-hash' which see.
 
 The alist of symmetric ciphers can be obtained with `gnutls-ciphers`.
 The CIPHER may be a string or symbol matching a key in that alist, or
@@ -2097,11 +2170,15 @@ the digest-algorithm method name. */)
 }
 
 DEFUN ("gnutls-hash-mac", Fgnutls_hash_mac, Sgnutls_hash_mac, 3, 3, 0,
-       doc: /* Hash INPUT string with HASH-METHOD and KEY string into a unibyte string.
+       doc: /* Hash INPUT with HASH-METHOD and KEY into a unibyte string.
 
-Returns nil on error.  INPUT and KEY should be unibyte strings.
+Returns nil on error.  INPUT and KEY can be strings or buffers or lists.
 
-KEY will be wiped by the function.
+KEY will be wiped by the function if it's a string.
+
+INPUT and KEY can be a list in the format (BUFFER-OR-STRING INPUT-START
+INPUT-END CODING-SYSTEM NOERROR) and those elements are extracted and
+used as in `secure-hash' which see.
 
 The alist of MAC algorithms can be obtained with `gnutls-macs`.  The
 HASH-METHOD may be a string or symbol matching a key in that alist, or
@@ -2109,8 +2186,15 @@ a plist with the `:mac-algorithm-id' numeric property, or the number
 itself. */)
      (Lisp_Object hash_method, Lisp_Object key, Lisp_Object input)
 {
-  CHECK_STRING (input);
-  CHECK_STRING (key);
+  if (BUFFERP (input) || STRINGP (input))
+    input = list1 (input);
+
+  CHECK_CONS (input);
+
+  if (BUFFERP (key) || STRINGP (key))
+    key = list1 (key);
+
+  CHECK_CONS (key);
 
   int ret = GNUTLS_E_SUCCESS;
 
@@ -2150,8 +2234,17 @@ itself. */)
       return Qnil;
     }
 
+  ptrdiff_t kstart_byte, kend_byte;
+  const char* kdata = extract_data_from_object (key, &kstart_byte, &kend_byte);
   gnutls_hmac_hd_t hmac;
-  ret = gnutls_hmac_init (&hmac, gma, SSDATA (key), SCHARS (key));
+  ret = gnutls_hmac_init (&hmac, gma,
+                          kdata + kstart_byte, kend_byte - kstart_byte);
+
+  if (kdata == NULL)
+    {
+      error ("GnuTLS MAC key extraction failed");
+      return Qnil;
+    }
 
   if (ret < GNUTLS_E_SUCCESS)
     {
@@ -2163,12 +2256,21 @@ itself. */)
       return Qnil;
     }
 
+  ptrdiff_t istart_byte, iend_byte;
+  const char* idata = extract_data_from_object (input, &istart_byte, &iend_byte);
+  if (idata == NULL)
+    {
+      error ("GnuTLS MAC input extraction failed");
+      return Qnil;
+    }
+
   size_t digest_length = gnutls_hmac_get_len (gma);
   Lisp_Object digest = make_uninit_string (digest_length);
 
-  ret = gnutls_hmac (hmac, SSDATA (input), SCHARS (input));
+  ret = gnutls_hmac (hmac, idata + istart_byte, iend_byte - istart_byte);
 
-  Fclear_string (key);
+  if (STRINGP (XCAR (key)))
+    Fclear_string (XCAR (key));
 
   if (ret < GNUTLS_E_SUCCESS)
     {
@@ -2189,9 +2291,13 @@ itself. */)
 }
 
 DEFUN ("gnutls-hash-digest", Fgnutls_hash_digest, Sgnutls_hash_digest, 2, 2, 0,
-       doc: /* Digest INPUT string with DIGEST-METHOD into a unibyte string.
+       doc: /* Digest INPUT with DIGEST-METHOD into a unibyte string.
 
-Returns nil on error.  INPUT should be a unibyte string.
+Returns nil on error.  INPUT can be a string or a buffer or a list.
+
+INPUT can be a list in the format (BUFFER-OR-STRING INPUT-START
+INPUT-END CODING-SYSTEM NOERROR) and those elements are extracted and
+used as in `secure-hash' which see.
 
 The alist of digest algorithms can be obtained with `gnutls-digests`.
 The DIGEST-METHOD may be a string or symbol matching a key in that
@@ -2199,7 +2305,10 @@ alist, or a plist with the `:digest-algorithm-id' numeric property, or
 the number itself. */)
      (Lisp_Object digest_method, Lisp_Object input)
 {
-  CHECK_STRING (input);
+  if (BUFFERP (input) || STRINGP (input))
+    input = list1 (input);
+
+  CHECK_CONS (input);
 
   int ret = GNUTLS_E_SUCCESS;
 
@@ -2254,7 +2363,15 @@ the number itself. */)
   size_t digest_length = gnutls_hash_get_len (gda);
   Lisp_Object digest = make_uninit_string (digest_length);
 
-  ret = gnutls_hash (hash, SSDATA (input), SCHARS (input));
+  ptrdiff_t istart_byte, iend_byte;
+  const char* idata = extract_data_from_object (input, &istart_byte, &iend_byte);
+  if (idata == NULL)
+    {
+      error ("GnuTLS digest input extraction failed");
+      return Qnil;
+    }
+
+  ret = gnutls_hash (hash, idata + istart_byte, iend_byte - istart_byte);
 
   if (ret < GNUTLS_E_SUCCESS)
     {
