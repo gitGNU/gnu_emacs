@@ -1822,7 +1822,7 @@ gnutls_symmetric_aead (bool encrypting, gnutls_cipher_algorithm_t gca,
   if (ret < GNUTLS_E_SUCCESS)
     {
       memset (storage, 0, storage_length);
-      xfree (storage);
+      SAFE_FREE ();
       gnutls_aead_cipher_deinit (acipher);
       const char* str = gnutls_strerror (ret);
       if (!str)
@@ -1836,8 +1836,9 @@ gnutls_symmetric_aead (bool encrypting, gnutls_cipher_algorithm_t gca,
 
   // TODO: switch this to use a resize_string_data() function when
   // that's provided in the C core, to avoid the extra copy.
-  Lisp_Object output = make_unibyte_string (storage, storage_length);
+  Lisp_Object output = make_unibyte_string ((const char *)storage, storage_length);
   memset (storage, 0, storage_length);
+  SAFE_FREE ();
   return output;
 #else
   error ("GnuTLS AEAD cipher %ld was invalid or not found", (long) gca);
