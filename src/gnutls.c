@@ -1811,9 +1811,16 @@ gnutls_symmetric_aead (bool encrypting, gnutls_cipher_algorithm_t gca,
                                         SSDATA (storage), &storage_length);
     }
 
+  Fclear_string (key);
+  Fclear_string (iv);
+  if (STRINGP (aead_auth))
+    {
+      Fclear_string (aead_auth);
+    }
+
   if (ret < GNUTLS_E_SUCCESS)
     {
-      memset(SSDATA (storage), 0, storage_length);
+      Fclear_string (storage);
       gnutls_aead_cipher_deinit (acipher);
       const char* str = gnutls_strerror (ret);
       if (!str)
@@ -1825,6 +1832,8 @@ gnutls_symmetric_aead (bool encrypting, gnutls_cipher_algorithm_t gca,
 
   gnutls_aead_cipher_deinit (acipher);
 
+  // TODO: switch this to use a resize_string_data() function when
+  // that's provided in the C core, to avoid the extra copy.
   return make_unibyte_string (SSDATA (storage), storage_length);
 #else
   error ("GnuTLS AEAD cipher %ld was invalid or not found", (long) gca);
@@ -1950,9 +1959,12 @@ gnutls_symmetric (bool encrypting, Lisp_Object cipher,
                                     SSDATA (storage), storage_length);
     }
 
+  Fclear_string (key);
+  Fclear_string (iv);
+
   if (ret < GNUTLS_E_SUCCESS)
     {
-      memset(SSDATA (storage), 0, storage_length);
+      Fclear_string (storage);
       gnutls_cipher_deinit (hcipher);
       const char* str = gnutls_strerror (ret);
       if (!str)
@@ -1973,6 +1985,8 @@ DEFUN ("gnutls-symmetric-encrypt", Fgnutls_symmetric_encrypt, Sgnutls_symmetric_
 Returns nil on error. INPUT, KEY, and IV should be unibyte
 strings.
 
+IV, KEY, and AEAD_AUTH will be wiped by the function.
+
 The alist of symmetric ciphers can be obtained with `gnutls-ciphers`.
 The CIPHER may be a string or symbol matching a key in that alist, or
 a plist with the `:cipher-id' numeric property, or the number itself.
@@ -1990,6 +2004,8 @@ DEFUN ("gnutls-symmetric-decrypt", Fgnutls_symmetric_decrypt, Sgnutls_symmetric_
 
 Returns nil on error. INPUT, KEY, and IV should be unibyte
 strings. AEAD_AUTH may be a unibyte string or omitted (nil).
+
+IV, KEY, and AEAD_AUTH will be wiped by the function.
 
 The alist of symmetric ciphers can be obtained with `gnutls-ciphers`.
 The CIPHER may be a string or symbol matching a key in that alist, or
@@ -2080,6 +2096,8 @@ DEFUN ("gnutls-hash-mac", Fgnutls_hash_mac, Sgnutls_hash_mac, 3, 3, 0,
 
 Returns nil on error.  INPUT and KEY should be unibyte strings.
 
+KEY will be wiped by the function.
+
 The alist of MAC algorithms can be obtained with `gnutls-macs`.  The
 HASH-METHOD may be a string or symbol matching a key in that alist, or
 a plist with the `:mac-algorithm-id' numeric property, or the number
@@ -2144,6 +2162,8 @@ itself. */)
   Lisp_Object digest = make_uninit_string (digest_length);
 
   ret = gnutls_hmac (hmac, SSDATA (input), SCHARS (input));
+
+  Fclear_string (key);
 
   if (ret < GNUTLS_E_SUCCESS)
     {
