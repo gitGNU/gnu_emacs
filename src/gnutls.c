@@ -2052,10 +2052,14 @@ gnutls_symmetric (bool encrypting, Lisp_Object cipher,
 DEFUN ("gnutls-symmetric-encrypt", Fgnutls_symmetric_encrypt, Sgnutls_symmetric_encrypt, 4, 5, 0,
        doc: /* Encrypt INPUT string with symmetric CIPHER and KEY+AEAD_AUTH and IV strings into a unibyte string.
 
-Returns nil on error. INPUT, KEY, and IV should be unibyte
-strings.
+Returns nil on error.  INPUT, KEY, and IV can be strings or buffers or
+lists.
 
 IV, KEY, and AEAD_AUTH will be wiped by the function.
+
+INPUT and KEY and IV and AEAD_AUTH can be a list in the format
+(BUFFER-OR-STRING INPUT-START INPUT-END CODING-SYSTEM NOERROR) and
+those elements are extracted and used as in `secure-hash' which see.
 
 The alist of symmetric ciphers can be obtained with `gnutls-ciphers`.
 The CIPHER may be a string or symbol matching a key in that alist, or
@@ -2081,7 +2085,7 @@ lists.
 IV, KEY, and AEAD_AUTH will be wiped by the function if they are
 strings.
 
-INPUT and KEY and AEAD_AUTH can be a list in the format
+INPUT and KEY and IV and AEAD_AUTH can be a list in the format
 (BUFFER-OR-STRING INPUT-START INPUT-END CODING-SYSTEM NOERROR) and
 those elements are extracted and used as in `secure-hash' which see.
 
