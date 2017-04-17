@@ -1830,9 +1830,6 @@ gnutls_symmetric_aead (bool encrypting, gnutls_cipher_algorithm_t gca,
                                         storage, &storage_length);
     }
 
-  if (!NILP (aead_auth) && STRINGP (XCAR (aead_auth)))
-    Fclear_string (XCAR (aead_auth));
-
   if (ret < GNUTLS_E_SUCCESS)
     {
       memset (storage, 0, storage_length);
@@ -1977,8 +1974,6 @@ gnutls_symmetric (bool encrypting, Lisp_Object cipher,
                                aead_auth);
       if (STRINGP (XCAR (key)))
         Fclear_string (XCAR (key));
-      if (STRINGP (XCAR (iv)))
-        Fclear_string (XCAR (iv));
       return aead_output;
     }
 
@@ -2029,12 +2024,9 @@ gnutls_symmetric (bool encrypting, Lisp_Object cipher,
 
   if (STRINGP (XCAR (key)))
     Fclear_string (XCAR (key));
-  if (STRINGP (XCAR (iv)))
-    Fclear_string (XCAR (iv));
 
   if (ret < GNUTLS_E_SUCCESS)
     {
-      Fclear_string (storage);
       gnutls_cipher_deinit (hcipher);
       const char* str = gnutls_strerror (ret);
       if (!str)
@@ -2055,7 +2047,7 @@ DEFUN ("gnutls-symmetric-encrypt", Fgnutls_symmetric_encrypt, Sgnutls_symmetric_
 Returns nil on error.  INPUT, KEY, and IV can be strings or buffers or
 lists.
 
-IV, KEY, and AEAD_AUTH will be wiped by the function.
+KEY will be wiped by the function if it's a string.
 
 INPUT and KEY and IV and AEAD_AUTH can be a list in the format
 (BUFFER-OR-STRING START END CODING-SYSTEM NOERROR) and
@@ -2082,8 +2074,7 @@ strings. AEAD_AUTH may be a unibyte string or omitted (nil).
 Returns nil on error.  INPUT, KEY, and IV can be strings or buffers or
 lists.
 
-IV, KEY, and AEAD_AUTH will be wiped by the function if they are
-strings.
+KEY will be wiped by the function if it's a string.
 
 INPUT and KEY and IV and AEAD_AUTH can be a list in the format
 (BUFFER-OR-STRING START END CODING-SYSTEM NOERROR) and

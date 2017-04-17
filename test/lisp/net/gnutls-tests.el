@@ -94,6 +94,20 @@
           (should (plist-get plist prop)))
         (should (eq 'gnutls-symmetric-cipher (plist-get plist :type)))))))
 
+;; (ert-deftest test-gnutls-000-data-extractions ()
+;;   "Test the GnuTLS data extractions against the built-in `secure-hash'."
+;;   (skip-unless (gnutls-available-p))
+;;   (setq gnutls-tests-message-prefix "data extraction: ")
+;;   (dolist (input (delete "" gnutls-tests-mondo-strings))
+;;     ;; Test buffer extraction
+;;     (with-temp-buffer
+;;       (insert input)
+;;       (dolist (range '((0 1)))
+;;         (let ((spec (append (list (current-buffer)) range)))
+;;           (should (gnutls-tests-hexstring-equal
+;;                    (gnutls-hash-digest 'MD5 spec)
+;;                    (secure-hash 'md5 spec nil nil t))))))))
+
 (ert-deftest test-gnutls-001-hashes-internal-digests ()
   "Test the GnuTLS hash digests against the built-in `secure-hash'."
   (skip-unless (gnutls-available-p))
@@ -198,8 +212,8 @@
                    (key (gnutls-tests-pad-or-trim key (plist-get cplist :cipher-keysize)))
                    (input (gnutls-tests-pad-to-multiple input (plist-get cplist :cipher-blocksize)))
                    (iv (gnutls-tests-pad-or-trim iv (plist-get cplist :cipher-ivsize)))
-                   (data (gnutls-symmetric-encrypt cplist (copy-sequence key) (copy-sequence iv) input))
-                   (reverse (gnutls-symmetric-decrypt cplist (copy-sequence key) (copy-sequence iv) data)))
+                   (data (gnutls-symmetric-encrypt cplist (copy-sequence key) iv input))
+                   (reverse (gnutls-symmetric-decrypt cplist (copy-sequence key) iv data)))
               (gnutls-tests-message "%s %S" cipher cplist)
               (gnutls-tests-message "key %S IV %S input %S => hexdata %S and reverse %S" key iv input (encode-hex-string data) reverse)
               (should-not (gnutls-tests-hexstring-equal input data))
@@ -234,8 +248,8 @@
                      (key (gnutls-tests-pad-or-trim key (plist-get cplist :cipher-keysize)))
                      (input (gnutls-tests-pad-to-multiple input (plist-get cplist :cipher-blocksize)))
                      (iv (gnutls-tests-pad-or-trim iv (plist-get cplist :cipher-ivsize)))
-                     (data (gnutls-symmetric-encrypt cplist (copy-sequence key) (copy-sequence iv) input (copy-sequence auth)))
-                     (reverse (gnutls-symmetric-decrypt cplist (copy-sequence key) (copy-sequence iv) data (copy-sequence auth))))
+                     (data (gnutls-symmetric-encrypt cplist (copy-sequence key) iv input (copy-sequence auth)))
+                     (reverse (gnutls-symmetric-decrypt cplist (copy-sequence key) iv data auth)))
                 (gnutls-tests-message "%s %S" cipher cplist)
                 (gnutls-tests-message "key %S IV %S input %S auth %S => hexdata %S and reverse %S" key iv input auth (encode-hex-string data) reverse)
                 (should-not (gnutls-tests-hexstring-equal input data))
