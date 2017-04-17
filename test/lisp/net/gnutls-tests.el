@@ -38,14 +38,18 @@
 (defsubst gnutls-tests-hexstring-equal (a b)
   (and (stringp a) (stringp b) (string-equal (encode-hex-string a) (encode-hex-string b))))
 
+(defvar gnutls-tests-internal-macs-upcased
+  (mapcar (lambda (sym) (cons sym (intern (upcase (symbol-name sym)))))
+          (secure-hash-algorithms)))
+
 (defvar gnutls-tests-tested-macs
   (remove-duplicates
-   (append '(MD5 SHA1 SHA224 SHA256 SHA384 SHA512)
+   (append (mapcar 'cdr gnutls-tests-internal-macs-upcased)
            (mapcar 'car (gnutls-macs)))))
 
 (defvar gnutls-tests-tested-digests
   (remove-duplicates
-   (append '(MD5 SHA1 SHA224 SHA256 SHA384 SHA512)
+   (append (mapcar 'cdr gnutls-tests-internal-macs-upcased)
            (mapcar 'car (gnutls-digests)))))
 
 (defvar gnutls-tests-tested-ciphers
@@ -67,6 +71,7 @@
   "Test the GnuTLS hashes and ciphers availability."
   (skip-unless (gnutls-available-p))
   (setq gnutls-tests-message-prefix "availability: ")
+  (should (> (length gnutls-tests-internal-macs-upcased) 5))
   (let ((macs (gnutls-macs))
         (digests (gnutls-digests))
         (ciphers (gnutls-ciphers)))
@@ -89,22 +94,18 @@
           (should (plist-get plist prop)))
         (should (eq 'gnutls-symmetric-cipher (plist-get plist :type)))))))
 
-(ert-deftest test-gnutls-001-hashes-digests ()
+(ert-deftest test-gnutls-001-hashes-internal-digests ()
   "Test the GnuTLS hash digests against the built-in `secure-hash'."
   (skip-unless (gnutls-available-p))
   (setq gnutls-tests-message-prefix "digest internal verification: ")
   (let ((macs (gnutls-macs)))
-    ;; These are the digest algorithms currently supported by
-    ;; `secure-hash'. Unfortunately this list can't be obtained
-    ;; programmatically.
-    (dolist (sym '(md5 sha1 sha224 sha256 sha384 sha512))
-      (let* ((mac (intern (upcase (symbol-name sym))))
-             (plist (cdr (assq mac macs))))
-        (gnutls-tests-message "Checking digest MAC %s %S" mac plist)
+    (dolist (mcell gnutls-tests-internal-macs-upcased)
+      (let ((plist (cdr (assq (cdr mcell) macs))))
+        (gnutls-tests-message "Checking digest MAC %S %S" mcell plist)
         (dolist (input gnutls-tests-mondo-strings)
           (should (gnutls-tests-hexstring-equal
-                   (gnutls-hash-digest mac input)
-                   (secure-hash sym input nil nil t))))))))
+                   (gnutls-hash-digest (cdr mcell) input)
+                   (secure-hash (car mcell) input nil nil t))))))))
 
 (ert-deftest test-gnutls-002-hashes-digests ()
   "Test some GnuTLS hash digests against pre-defined outputs."

@@ -4726,6 +4726,20 @@ make_digest_string (Lisp_Object digest, int digest_size)
   return digest;
 }
 
+DEFUN ("secure-hash-algorithms", Fsecure_hash_algorithms,
+       Ssecure_hash_algorithms, 0, 0, 0,
+       doc: /* Return a list of all the supported `secure_hash' algorithms. */)
+  (void)
+{
+  return listn (CONSTYPE_HEAP, 6,
+                Qmd5,
+                Qsha1,
+                Qsha224,
+                Qsha256,
+                Qsha384,
+                Qsha512);
+}
+
 /* ALGORITHM is a symbol: md5, sha1, sha224 and so on. */
 
 static Lisp_Object
@@ -5178,6 +5192,7 @@ this variable.  */);
   defsubr (&Sbase64_encode_string);
   defsubr (&Sbase64_decode_string);
   defsubr (&Smd5);
+  defsubr (&Ssecure_hash_algorithms);
   defsubr (&Ssecure_hash);
   defsubr (&Sbuffer_hash);
   defsubr (&Slocale_info);
