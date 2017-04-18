@@ -57,8 +57,7 @@ the character after point.
 * Decompression::    Dealing with compressed data.
 * Base 64::          Conversion to or from base 64 encoding.
 * Checksum/Hash::    Computing cryptographic hashes.
-* GnuTLS Crypto::    Cryptographic digests, hashes,
-                     and ciphers imported from GnuTLS.
+* GnuTLS Cryptography:: Cryptographic algorithms imported from GnuTLS.
 * Parsing HTML/XML:: Parsing HTML and XML.
 * Atomic Changes::   Installing several buffer changes atomically.
 * Change Hooks::     Supplying functions to be run when text is changed.
@@ -4496,8 +4495,8 @@ It should be somewhat more efficient on larger buffers than
 @c according to what we find useful.
 @end defun
 
-@node GnuTLS Crypto
-@section GnuTLS Crypto
+@node GnuTLS Cryptography
+@section GnuTLS Cryptography
 @cindex MD5 checksum
 @cindex SHA hash
 @cindex hash, cryptographic
