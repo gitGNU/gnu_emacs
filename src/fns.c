@@ -4916,12 +4916,7 @@ secure_hash (Lisp_Object algorithm, Lisp_Object object, Lisp_Object start,
 
   CHECK_SYMBOL (algorithm);
 
-  Lisp_Object spec = listn (CONSTYPE_HEAP, 5,
-                            object,
-                            start,
-                            end,
-                            coding_system,
-                            noerror);
+  Lisp_Object spec = list5 (object, start, end, coding_system, noerror);
 
   const char* input = extract_data_from_object (spec, &start_byte, &end_byte);
 
