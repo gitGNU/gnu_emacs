@@ -94,19 +94,28 @@
           (should (plist-get plist prop)))
         (should (eq 'gnutls-symmetric-cipher (plist-get plist :type)))))))
 
-;; (ert-deftest test-gnutls-000-data-extractions ()
-;;   "Test the GnuTLS data extractions against the built-in `secure-hash'."
-;;   (skip-unless (gnutls-available-p))
-;;   (setq gnutls-tests-message-prefix "data extraction: ")
-;;   (dolist (input (delete "" gnutls-tests-mondo-strings))
-;;     ;; Test buffer extraction
-;;     (with-temp-buffer
-;;       (insert input)
-;;       (dolist (range '((0 1)))
-;;         (let ((spec (append (list (current-buffer)) range)))
-;;           (should (gnutls-tests-hexstring-equal
-;;                    (gnutls-hash-digest 'MD5 spec)
-;;                    (secure-hash 'md5 spec nil nil t))))))))
+(ert-deftest test-gnutls-000-data-extractions ()
+  "Test the GnuTLS data extractions against the built-in `secure-hash'."
+  (skip-unless (gnutls-available-p))
+  (setq gnutls-tests-message-prefix "data extraction: ")
+  (dolist (input (delete "" gnutls-tests-mondo-strings))
+    ;; Test buffer extraction
+    (with-temp-buffer
+      (insert input)
+      (insert "not ASCII: не e английски")
+      (dolist (step '(0 1 2 3 4 5))
+        (let ((spec (list (current-buffer) ; a buffer spec
+                          (point-min)
+                          (max (point-min) (- step (point-max)))))
+              (spec2 (list (buffer-string) ; a string spec
+                           (point-min)
+                           (max (point-min) (- step (point-max))))))
+          (should (gnutls-tests-hexstring-equal
+                   (gnutls-hash-digest 'MD5 spec)
+                   (apply 'secure-hash 'md5 (append spec '(t)))))
+          (should (gnutls-tests-hexstring-equal
+                   (gnutls-hash-digest 'MD5 spec2)
+                   (apply 'secure-hash 'md5 (append spec2 '(t))))))))))
 
 (ert-deftest test-gnutls-001-hashes-internal-digests ()
   "Test the GnuTLS hash digests against the built-in `secure-hash'."
