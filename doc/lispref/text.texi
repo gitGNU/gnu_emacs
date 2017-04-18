@@ -57,6 +57,8 @@ the character after point.
 * Decompression::    Dealing with compressed data.
 * Base 64::          Conversion to or from base 64 encoding.
 * Checksum/Hash::    Computing cryptographic hashes.
+* GnuTLS Crypto::    Cryptographic digests, hashes,
+                     and ciphers imported from GnuTLS.
 * Parsing HTML/XML:: Parsing HTML and XML.
 * Atomic Changes::   Installing several buffer changes atomically.
 * Change Hooks::     Supplying functions to be run when text is changed.
@@ -4492,6 +4494,182 @@ It should be somewhat more efficient on larger buffers than
 @c Note that we do not document what hashing function we're using, or
 @c even whether it's a cryptographic hash, since that may change
 @c according to what we find useful.
+@end defun
+
+@node GnuTLS Crypto
+@section GnuTLS Crypto
+@cindex MD5 checksum
+@cindex SHA hash
+@cindex hash, cryptographic
+@cindex cryptographic hash
+@cindex AEAD cipher
+@cindex cipher, AEAD
+@cindex symmetric cipher
+@cindex cipher, symmetric
+
+If compiled with GnuTLS (TODO: without autoconf macros, we have to
+require 3.4) Emacs offers built-in cryptographic support. Following
+the GnuTLS API terminology, the available tools are digests, MACs,
+symmetric ciphers, and AEAD ciphers.
+
+@defun gnutls-digests
+This function returns the alist of the GnuTLS digest algorithms.
+
+Each entry has a key which represents the algorithm, followed by a
+plist with internal details about the algorithm. The plist will have
+@code{:type gnutls-digest-algorithm} and also will have the key
+@code{:digest-algorithm-length 64} to indicate the size, in bytes, of
+the resulting digest.
+
+There is a name parallel between GnuTLS MAC and digest algorithms but
+they are separate things internally and should not be mixed.
+@end defun
+
+@defun gnutls-hash-digest digest-method input
+The @var{digest-method} can be the whole plist from
+@code{gnutls-digests}, or just the symbol key, or a string with the
+name of that symbol.
+
+The @var{input} can be a string or a buffer or a list in the format
+@var{(BUFFER-OR-STRING START END CODING-SYSTEM NOERROR)} where only
+the first element is required.
+
+In the list form of @var{input}
+you can specify a buffer or a string, an optional range to be
+extracted, and an optional coding system. The last optional item,
+@var{NOERROR}, overrides the normal error when the text can't be
+encoded using the specified or chosen coding system.  When
+@var{NOERROR} is non-@code{nil}, this function silently uses
+@code{raw-text} coding instead. This is similar to how @code{md5} and
+@code{secure-hash} operate but the arguments are packed in a list.
+
+This function returns nil on error, and signals a Lisp error if the
+@var{digest-method} or @var{input} are invalid. On success, it returns
+a binary string.
+@end defun
+
+@defun gnutls-macs
+This function returns the alist of the GnuTLS MAC algorithms.
+
+Each entry has a key which represents the algorithm, followed by a
+plist with internal details about the algorithm. The plist will have
+@code{:type gnutls-mac-algorithm} and also will have the keys
+@code{:mac-algorithm-length} @code{:mac-algorithm-keysize}
+@code{:mac-algorithm-noncesize} to indicate the size, in bytes, of the
+resulting hash, the key, and the nonce respectively.
+
+The nonce is currently unused and only some MACs support it.
+
+There is a name parallel between GnuTLS MAC and digest algorithms but
+they are separate things internally and should not be mixed.
+@end defun
+
+@defun gnutls-hash-mac hash-method key input
+The @var{hash-method} can be the whole plist from
+@code{gnutls-macs}, or just the symbol key, or a string with the
+name of that symbol.
+
+The @var{key} can be a string or a buffer or a list in the format
+@var{(BUFFER-OR-STRING START END CODING-SYSTEM NOERROR)} where only
+the first element is required. The @var{key} will be wiped after use
+if it's a string.
+
+The @var{input} can be a string or a buffer or a list in the format
+@var{(BUFFER-OR-STRING START END CODING-SYSTEM NOERROR)} where only
+the first element is required.
+
+In the list form of @var{key} and @var{input}
+you can specify a buffer or a string, an optional range to be
+extracted, and an optional coding system. The last optional item,
+@var{NOERROR}, overrides the normal error when the text can't be
+encoded using the specified or chosen coding system.  When
+@var{NOERROR} is non-@code{nil}, this function silently uses
+@code{raw-text} coding instead. This is similar to how @code{md5} and
+@code{secure-hash} operate but the arguments are packed in a list.
+
+This function returns nil on error, and signals a Lisp error if the
+@var{hash-method} or @var{key} or @var{input} are invalid.  On
+success, it returns a binary string.
+@end defun
+
+@defun gnutls-ciphers
+This function returns the alist of the GnuTLS ciphers.
+
+Each entry has a key which represents the cipher, followed by a plist
+with internal details about the algorithm. The plist will have
+@code{:type gnutls-symmetric-cipher} and also will have the keys
+@code{:cipher-aead-capable} set to @code{nil} or @code{t} to indicate
+AEAD capability; and @code{:cipher-tagsize} @code{:cipher-blocksize}
+@code{:cipher-keysize} @code{:cipher-ivsize} to indicate the size, in
+bytes, of the tag, block size of the resulting data, the key, and the
+IV respectively.
+@end defun
+
+@defun gnutls-symmetric-encrypt cipher key iv input &optional aead_auth
+The @var{cipher} can be the whole plist from
+@code{gnutls-ciphers}, or just the symbol key, or a string with the
+name of that symbol.
+
+The @var{key} can be a string or a buffer or a list in the format
+@var{(BUFFER-OR-STRING START END CODING-SYSTEM NOERROR)} where only
+the first element is required. The @var{key} will be wiped after use
+if it's a string.
+
+The @var{iv} and @var{input} and the optional @var{aead_auth} can be a
+string or a buffer or a list in the format @var{(BUFFER-OR-STRING
+START END CODING-SYSTEM NOERROR)} where only the first element is
+required.
+
+In the list form of @var{key}, @var{iv}, @var{input}, and the optional @var{aead_auth}
+you can specify a buffer or a string, an optional range to be
+extracted, and an optional coding system. The last optional item,
+@var{NOERROR}, overrides the normal error when the text can't be
+encoded using the specified or chosen coding system.  When
+@var{NOERROR} is non-@code{nil}, this function silently uses
+@code{raw-text} coding instead. This is similar to how @code{md5} and
+@code{secure-hash} operate but the arguments are packed in a list.
+
+@var{aead_auth} is only checked with AEAD ciphers, that is, ciphers whose
+plist has @code{:cipher-aead-capable t}. Otherwise it's ignored.
+
+This function returns nil on error, and signals a Lisp error if the
+@var{cipher} or @var{key}, @var{iv}, or @var{input} are invalid, or if
+@var{aead_auth} was specified with an AEAD cipher and was invalid.  On
+success, it returns an encrypted binary string.
+@end defun
+
+@defun gnutls-symmetric-decrypt cipher key iv input &optional aead_auth
+The @var{cipher} can be the whole plist from
+@code{gnutls-ciphers}, or just the symbol key, or a string with the
+name of that symbol.
+
+The @var{key} can be a string or a buffer or a list in the format
+@var{(BUFFER-OR-STRING START END CODING-SYSTEM NOERROR)} where only
+the first element is required. The @var{key} will be wiped after use
+if it's a string.
+
+The @var{iv} and @var{input} and the optional @var{aead_auth} can be a
+string or a buffer or a list in the format @var{(BUFFER-OR-STRING
+START END CODING-SYSTEM NOERROR)} where only the first element is
+required.
+
+In the list form of @var{key}, @var{iv}, @var{input}, and the optional @var{aead_auth}
+you can specify a buffer or a string, an optional range to be
+extracted, and an optional coding system. The last optional item,
+@var{NOERROR}, overrides the normal error when the text can't be
+encoded using the specified or chosen coding system.  When
+@var{NOERROR} is non-@code{nil}, this function silently uses
+@code{raw-text} coding instead. This is similar to how @code{md5} and
+@code{secure-hash} operate but the arguments are packed in a list.
+
+@var{aead_auth} is only checked with AEAD ciphers, that is, ciphers whose
+plist has @code{:cipher-aead-capable t}. Otherwise it's ignored.
+
+This function returns nil on decryption error, and signals a Lisp
+error if the @var{cipher} or @var{key}, @var{iv}, or @var{input} are
+invalid, or if @var{aead_auth} was specified with an AEAD cipher and
+was invalid.  On success, it returns the original string that was
+passed to @code{gnutls-symmetric-encrypt}.
 @end defun
 
 @node Parsing HTML/XML

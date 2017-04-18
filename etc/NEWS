@@ -879,6 +879,12 @@ instead of its first.
 * Lisp Changes in Emacs 26.1
 
 +++
+** Emacs now exposes the GnuTLS cryptographic API with the functions
+'gnutls-macs' and 'gnutls-hash-mac'; 'gnutls-digests' and
+'gnutls-hash-digest'; 'gnutls-ciphers' and 'gnutls-symmetric-encrypt'
+and 'gnutls-symmetric-decrypt'.
+
++++
 ** Emacs now supports records for user-defined types, via the new
 functions 'make-record', 'record', and 'recordp'.  Records are now
 used internally to represent cl-defstruct and defclass instances, for
