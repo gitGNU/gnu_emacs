@@ -98,7 +98,7 @@
   "Test the GnuTLS data extractions against the built-in `secure-hash'."
   (skip-unless (gnutls-available-p))
   (setq gnutls-tests-message-prefix "data extraction: ")
-  (dolist (input (delete "" gnutls-tests-mondo-strings))
+  (dolist (input gnutls-tests-mondo-strings)
     ;; Test buffer extraction
     (with-temp-buffer
       (insert input)
