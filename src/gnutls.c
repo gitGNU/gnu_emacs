@@ -2401,6 +2401,7 @@ GnuTLS AEAD ciphers     : the list will contain 'AEAD-ciphers.  */)
 #ifdef HAVE_GNUTLS
   Lisp_Object capabilities = Qnil;
 
+  // TODO: fix the autoconf function-checking macros that will tell us for sure.
 #ifdef HAVE_GNUTLS3_AEAD
   capabilities = Fcons (intern("AEAD-ciphers"), capabilities);
 #endif
