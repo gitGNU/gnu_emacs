@@ -69,7 +69,7 @@
 
 (ert-deftest test-gnutls-000-availability ()
   "Test the GnuTLS hashes and ciphers availability."
-  (skip-unless (gnutls-available-p))
+  (skip-unless (memq 'gnutls3 (gnutls-available-p)))
   (setq gnutls-tests-message-prefix "availability: ")
   (should (> (length gnutls-tests-internal-macs-upcased) 5))
   (let ((macs (gnutls-macs))
@@ -96,7 +96,7 @@
 
 (ert-deftest test-gnutls-000-data-extractions ()
   "Test the GnuTLS data extractions against the built-in `secure-hash'."
-  (skip-unless (gnutls-available-p))
+  (skip-unless (memq 'digests (gnutls-available-p)))
   (setq gnutls-tests-message-prefix "data extraction: ")
   (dolist (input gnutls-tests-mondo-strings)
     ;; Test buffer extraction
@@ -119,7 +119,7 @@
 
 (ert-deftest test-gnutls-001-hashes-internal-digests ()
   "Test the GnuTLS hash digests against the built-in `secure-hash'."
-  (skip-unless (gnutls-available-p))
+  (skip-unless (memq 'digests (gnutls-available-p)))
   (setq gnutls-tests-message-prefix "digest internal verification: ")
   (let ((macs (gnutls-macs)))
     (dolist (mcell gnutls-tests-internal-macs-upcased)
@@ -138,7 +138,7 @@
 
 (ert-deftest test-gnutls-002-hashes-digests ()
   "Test some GnuTLS hash digests against pre-defined outputs."
-  (skip-unless (gnutls-available-p))
+  (skip-unless (memq 'digests (gnutls-available-p)))
   (setq gnutls-tests-message-prefix "digest external verification: ")
   (let ((macs (gnutls-macs)))
     (dolist (test '(("57edf4a22be3c955ac49da2e2107b67a" "12345678901234567890123456789012345678901234567890123456789012345678901234567890" MD5)
@@ -165,7 +165,7 @@
 
 (ert-deftest test-gnutls-003-hashes-hmacs ()
   "Test some predefined GnuTLS HMAC outputs for SHA256."
-  (skip-unless (gnutls-available-p))
+  (skip-unless (memq 'macs (gnutls-available-p)))
   (setq gnutls-tests-message-prefix "HMAC verification: ")
   (let ((macs (gnutls-macs)))
     (dolist (test '(("f5c5021e60d9686fef3bb0414275fe4163bece61d9a95fec7a273746a437b986" "hello\n" "test" SHA256)
@@ -200,7 +200,7 @@
 ;; ;;; echo e36a9d13c15a6df23a59a6337d6132b8f7cd5283cb4784b81141b52343a18e5f5e5ee8f5553c23167409dd222478bc30 | perl -lne 'print pack "H*", $_' | openssl enc -aes-128-ctr -d  -nosalt -K 6d796b657932 -iv 696e697432 | od -x
 (ert-deftest test-gnutls-004-symmetric-ciphers ()
   "Test the GnuTLS symmetric ciphers"
-  (skip-unless (gnutls-available-p))
+  (skip-unless (memq 'ciphers (gnutls-available-p)))
   (setq gnutls-tests-message-prefix "symmetric cipher verification: ")
   ;; we expect at least 10 ciphers
   (should (> (length (gnutls-ciphers)) 10))
@@ -231,7 +231,7 @@
 
 (ert-deftest test-gnutls-005-aead-ciphers ()
   "Test the GnuTLS AEAD ciphers"
-  (skip-unless (gnutls-available-p))
+  (skip-unless (memq 'AEAD-ciphers (gnutls-available-p)))
   (setq gnutls-tests-message-prefix "AEAD verification: ")
   (let ((keys '("mykey" "mykey2"))
         (inputs gnutls-tests-mondo-strings)

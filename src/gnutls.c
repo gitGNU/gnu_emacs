@@ -2388,23 +2388,44 @@ the number itself. */)
 #endif
 
 DEFUN ("gnutls-available-p", Fgnutls_available_p, Sgnutls_available_p, 0, 0, 0,
-       doc: /* Return t if GnuTLS is available in this instance of Emacs.  */)
+       doc: /* Return list of capabilities if GnuTLS is available in this instance of Emacs.
+
+...if supported         : then...
+GnuTLS 3 or higher      : the list will contain 'gnutls3.
+GnuTLS MACs             : the list will contain 'macs.
+GnuTLS digests          : the list will contain 'digests.
+GnuTLS symmetric ciphers: the list will contain 'ciphers.
+GnuTLS AEAD ciphers     : the list will contain 'AEAD-ciphers.  */)
      (void)
 {
 #ifdef HAVE_GNUTLS
+  Lisp_Object capabilities = Qnil;
+
+#ifdef HAVE_GNUTLS3_AEAD
+  capabilities = Fcons (intern("AEAD-ciphers"), capabilities);
+#endif
+
+#ifdef HAVE_GNUTLS3
+  capabilities = Fcons (intern("gnutls3"), capabilities);
+  capabilities = Fcons (intern("ciphers"), capabilities);
+  capabilities = Fcons (intern("macs"), capabilities);
+  capabilities = Fcons (intern("digests"), capabilities);
+#endif
+
 # ifdef WINDOWSNT
   Lisp_Object found = Fassq (Qgnutls, Vlibrary_cache);
   if (CONSP (found))
-    return XCDR (found);
+    return XCDR (found); // TODO: use capabilities.
   else
     {
       Lisp_Object status;
-      status = init_gnutls_functions () ? Qt : Qnil;
+      // TODO: should the capabilities be dynamic here?
+      status = init_gnutls_functions () ? capabilities : Qnil;
       Vlibrary_cache = Fcons (Fcons (Qgnutls, status), Vlibrary_cache);
       return status;
     }
 # else	/* !WINDOWSNT */
-  return Qt;
+  return capabilities;
 # endif	 /* !WINDOWSNT */
 #else  /* !HAVE_GNUTLS */
   return Qnil;
