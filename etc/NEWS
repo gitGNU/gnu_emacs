@@ -878,9 +878,13 @@ instead of its first.
 
 * Lisp Changes in Emacs 26.1
 
+** Checksum/Hash
+
 +++
 ** New function 'secure-hash-algorithms' to list the algorithms that
 'secure-hash' supports.
+
+** GnuTLS Cryptography
 
 +++
 ** Emacs now exposes the GnuTLS cryptographic API with the functions
