@@ -4437,6 +4437,11 @@ similar theoretical weakness also exists in SHA-1.  Therefore, for
 security-related applications you should use the other hash types,
 such as SHA-2.
 
+@defun secure-hash-algorithms
+This function returns a list of symbols representing algorithms that
+@code{secure-hash} can use.
+@end defun
+
 @defun secure-hash algorithm object &optional start end binary
 This function returns a hash for @var{object}.  The argument
 @var{algorithm} is a symbol stating which hash to compute: one of
