@@ -4793,7 +4793,7 @@ extract_data_from_object (Lisp_Object spec,
                    ? SBYTES (object)
                    : string_char_to_byte (object, end_char));
     }
-  else
+  else if (BUFFERP (object))
     {
       struct buffer *prev = current_buffer;
 
@@ -4896,6 +4896,22 @@ extract_data_from_object (Lisp_Object spec,
 	object = code_convert_string (object, coding_system, Qnil, 1, 0, 0);
       *start_byte = 0;
       *end_byte = SBYTES (object);
+    }
+  else /* If not a string or a buffer, object must be a list in the form
+          (file "filename").  */
+    {
+      CHECK_CONS (object);
+
+      if (!EQ ((XCAR (object)), Qfile))
+        error ("Expected (file \"filename\") but got something else in the first position");
+
+      Lisp_Object filename = XCAR (XCDR (object));
+
+      if (! STRINGP (filename))
+        error ("Expected (file \"filename\") but got a non-string for the filename");
+
+      // Should we use Finsert_file_contents()?!??!
+      error ("Direct file reads are not supported yet.");
     }
 
   return SSDATA (object);
@@ -5060,6 +5076,9 @@ disregarding any coding systems.  If nil, use the current buffer.  */ )
 void
 syms_of_fns (void)
 {
+  /* For extract_data_from_object().  */
+  DEFSYM (Qfile, "file");
+
   DEFSYM (Qmd5,    "md5");
   DEFSYM (Qsha1,   "sha1");
   DEFSYM (Qsha224, "sha224");
