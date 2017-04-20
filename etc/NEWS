@@ -878,19 +878,17 @@ instead of its first.
 
 * Lisp Changes in Emacs 26.1
 
-** Checksum/Hash
-
 +++
 ** New function 'secure-hash-algorithms' to list the algorithms that
 'secure-hash' supports.
-
-** GnuTLS Cryptography
+See the node "(elisp) Checksum/Hash" in the ELisp manual for details.
 
 +++
 ** Emacs now exposes the GnuTLS cryptographic API with the functions
 'gnutls-macs' and 'gnutls-hash-mac'; 'gnutls-digests' and
 'gnutls-hash-digest'; 'gnutls-ciphers' and 'gnutls-symmetric-encrypt'
 and 'gnutls-symmetric-decrypt'.
+See the node "(elisp) Formatting Strings" in the ELisp manual for details.
 
 +++
 ** Emacs now supports records for user-defined types, via the new
