@@ -32,6 +32,7 @@
 (require 'gnus-start)
 (require 'nnmail)
 (require 'gnus-spec)
+(require 'gnus-search)
 (require 'gnus-int)
 (require 'gnus-range)
 (require 'gnus-win)
@@ -48,9 +49,6 @@
 
 (autoload 'gnus-agent-total-fetched-for "gnus-agent")
 (autoload 'gnus-cache-total-fetched-for "gnus-cache")
-
-(autoload 'gnus-group-make-search-group "nnselect")
-(autoload 'gnus-group-make-permanent-search-group "nnselect")
 
 (autoload 'gnus-cloud-upload-all-data "gnus-cloud")
 (autoload 'gnus-cloud-download-all-data "gnus-cloud")
