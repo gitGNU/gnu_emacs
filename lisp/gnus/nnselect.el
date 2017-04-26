@@ -36,10 +36,10 @@
 ;; sorting. Most functions will just chose a fixed number, such as
 ;; 100, for this score.
 
-;; For example the search function `nnir-run-query' applied to
-;; arguments specifying a search query (see "nnir.el") can be used to
-;; return a list of articles from a search. Or the function can be the
-;; identity and the args a vector of articles.
+;; For example the search function `gnus-search-run-query' applied to
+;; arguments specifying a search query (see "gnus-search.el") can be
+;; used to return a list of articles from a search. Or the function
+;; can be the identity and the args a vector of articles.
 
 
 ;;; Code:
@@ -273,7 +273,7 @@ If this variable is nil, or if the provided function returns nil,
     (mapc 'nnheader-insert-nov headers)
     'nov)))
 
-(declare-function nnir-run-query "nnir" (specs))
+(declare-function gnus-search-run-query "gnus-search" (specs))
 (deffoo nnselect-request-article (article &optional _group server to-buffer)
   (let* ((gnus-override-method nil)
 	 (nnselect (eq 'nnselect (car (gnus-server-to-method server))))
@@ -301,12 +301,11 @@ If this variable is nil, or if the provided function returns nil,
 		      (nnselect-article-group x)))) servers :test 'equal)))
 		   (gnus-articles-in-thread thread))))))
       (setq artlist
-	    (nnir-run-query
+	    (gnus-search-run-query
 	     (list
-	      (cons 'nnir-query-spec
-		    (list (cons 'query  (format "HEADER Message-ID %s" article))
-		    (cons 'criteria "")  (cons 'shortcut t)))
-	      (cons 'nnir-group-spec servers))))
+	      (cons 'search-query-spec
+		    (list (cons 'query `((id . ,article)))))
+	      (cons 'search-group-spec servers))))
       (unless (zerop (nnselect-artlist-length artlist))
 	(setq
 	 group-art
@@ -458,6 +457,10 @@ If this variable is nil, or if the provided function returns nil,
     (gnus-set-active group (cons 1 (nnselect-artlist-length
 				    gnus-newsgroup-selection)))))
 
+<<<<<<< HEAD
+=======
+(declare-function gnus-search-run-query "gnus-search" (specs))
+>>>>>>> 63fab4a02d... Make related change to nnselect.el
 (deffoo nnselect-request-thread (header &optional group server)
   (let ((group (nnselect-possibly-change-group group server))
 	;; find the best group for the originating article. if its a
@@ -487,14 +490,13 @@ If this variable is nil, or if the provided function returns nil,
 				 (unless  gnus-refer-thread-use-search
 				   (list artgroup))))))
 	       (query-spec
-		(list (cons 'query (nnimap-make-thread-query header))
-		      (cons 'criteria "")))
+		(list (cons 'query (nnimap-make-thread-query header))))
 	       (last (nnselect-artlist-length nnselect-artlist))
 	       (first (1+ last))
 	       (new-nnselect-artlist
-		(nnir-run-query
-		 (list (cons 'nnir-query-spec query-spec)
-		       (cons 'nnir-group-spec group-spec))))
+		(gnus-search-run-query
+		 (list (cons 'search-query-spec query-spec)
+		       (cons 'search-group-spec group-spec))))
 	       old-arts seq
 	       headers)
 	  ;; The search will likely find articles that are already
@@ -647,6 +649,9 @@ If this variable is nil, or if the provided function returns nil,
 (deffoo nnselect-server-opened (&optional _server)
   t)
 
+
+(declare-function gnus-registry-get-id-key "gnus-registry"
+                  (id key))
 (defun nnselect-search-thread (header)
   "Make an nnselect group containing the thread with article HEADER.
 The current server will be searched.  If the registry is
@@ -657,7 +662,7 @@ article came from is also searched."
 		(cons 'criteria "")))
 	 (server
 	  (list (list (gnus-method-to-server
-	   (gnus-find-method-for-group gnus-newsgroup-name)))))
+		       (gnus-find-method-for-group gnus-newsgroup-name)))))
 	 (registry-group (and
 			  (bound-and-true-p gnus-registry-enabled)
 			  (car (gnus-registry-get-id-key
@@ -678,10 +683,10 @@ article came from is also searched."
      (list
       (cons 'nnselect-specs
 	    (list
-	     (cons 'nnselect-function 'nnir-run-query)
+	     (cons 'nnselect-function 'gnus-search-run-query)
 	     (cons 'nnselect-args
-		   (list (cons 'nnir-query-spec query)
-			 (cons 'nnir-group-spec server)))))
+		   (list (cons 'search-query-spec query)
+			 (cons 'search-group-spec server)))))
       (cons 'nnselect-artlist nil)))
     (gnus-summary-goto-subject (gnus-id-to-article (mail-header-id header)))))
 
@@ -763,81 +768,6 @@ originating groups."
 	  (gnus-get-unread-articles-in-group
 	   group-info (gnus-active artgroup) t)
 	  (gnus-group-update-group artgroup t))))))
-
-
-(declare-function gnus-registry-get-id-key "gnus-registry" (id key))
-(declare-function gnus-group-topic-name "gnus-topic" ())
-(declare-function nnir-read-parms "nnir" (search-engine))
-(declare-function nnir-server-to-search-engine "nnir" (server))
-
-
-;; Temporary to make group creation easier
-
-(defun gnus-group-make-permanent-search-group (nnir-extra-parms &optional specs)
-  (interactive "P")
-  (gnus-group-make-search-group nnir-extra-parms specs t))
-
-(defun gnus-group-make-search-group (nnir-extra-parms &optional specs perm)
-  "Create an nnselect group based on a search.  Prompt for a
-search query and determine the groups to search as follows: if
-called from the *Server* buffer search all groups belonging to
-the server on the current line; if called from the *Group* buffer
-search any marked groups, or the group on the current line, or
-all the groups under the current topic. Calling with a prefix-arg
-prompts for additional search-engine specific constraints. A
-non-nil `specs' arg must be an alist with `nnir-query-spec' and
-`nnir-group-spec' keys, and skips all prompting."
-  (interactive "P")
-  (let* ((group-spec
-	  (or (cdr (assq 'nnir-group-spec specs))
-	    (if (gnus-server-server-name)
-		(list (list (gnus-server-server-name)))
-	      (nnselect-categorize
-	       (or gnus-group-marked
-		   (if (gnus-group-group-name)
-		       (list (gnus-group-group-name))
-		     (cdr (assoc (gnus-group-topic-name) gnus-topic-alist))))
-	       gnus-group-server))))
-	 (query-spec
-	  (or (cdr (assq 'nnir-query-spec specs))
-	    (apply
-	     'append
-	     (list (cons 'query
-			 (read-string "Query: " nil 'nnir-search-history)))
-	     (when nnir-extra-parms
-	       (mapcar
-		(lambda (x)
-		  (nnir-read-parms (nnir-server-to-search-engine (car x))))
-		group-spec))))))
-    (if perm
-	(let ((name (read-string "Group name: " nil)))
-	  (gnus-group-make-group
-	   name
-	   (list 'nnselect "nnselect")
-	   nil
-	   (list
-	    (cons 'nnselect-specs
-		  (list
-		   (cons 'nnselect-function 'nnir-run-query)
-		   (cons 'nnselect-args
-			 (list (cons 'nnir-query-spec query-spec)
-			       (cons 'nnir-group-spec group-spec))))))))
-      (gnus-group-read-ephemeral-group
-       (concat "nnselect-" (message-unique-id))
-       (list 'nnselect "nnselect")
-       nil
-       (cons (current-buffer) gnus-current-window-configuration)
-					;     nil
-       nil nil
-       (list
-	(cons 'nnselect-specs
-	      (list
-	       (cons 'nnselect-function 'nnir-run-query)
-	       (cons 'nnselect-args
-		     (list (cons 'nnir-query-spec query-spec)
-			   (cons 'nnir-group-spec group-spec)))))
-	(cons 'nnselect-artlist nil))))))
-
 
 ;; The end.
 (provide 'nnselect)
