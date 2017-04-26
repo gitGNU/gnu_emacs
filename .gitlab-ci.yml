@@ -1,0 +1,17 @@
+# Maintainer: tzz@lifelogs.com
+# See https://gitlab.com/emacs-ci/emacs
+image: debian:unstable
+
+before_script:
+  - apt update -qq
+  - apt install -y -qq build-essential autoconf automake libncurses-dev gnutls-dev
+
+stages:
+  - test
+
+test:
+  stage: test
+  script:
+    - ./autogen.sh
+    - ./configure --without-makeinfo
+    - make check
