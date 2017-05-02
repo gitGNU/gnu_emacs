@@ -457,10 +457,7 @@ If this variable is nil, or if the provided function returns nil,
     (gnus-set-active group (cons 1 (nnselect-artlist-length
 				    gnus-newsgroup-selection)))))
 
-<<<<<<< HEAD
-=======
 (declare-function gnus-search-run-query "gnus-search" (specs))
->>>>>>> 63fab4a02d... Make related change to nnselect.el
 (deffoo nnselect-request-thread (header &optional group server)
   (let ((group (nnselect-possibly-change-group group server))
 	;; find the best group for the originating article. if its a
